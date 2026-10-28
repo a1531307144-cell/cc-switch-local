@@ -159,7 +159,12 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <>
+      <div className="titlebar">
+        <img src={logoUrl} alt="" draggable={false} />
+        <span className="titlebar-title">CC Switch Local</span>
+      </div>
+      <div className="app">
       <aside className="sidebar">
         <div className="brand">
           <img className="logo-img" src={logoUrl} alt="" draggable={false} />
@@ -276,6 +281,7 @@ export default function App() {
 
       {draft && <ProviderForm draft={draft} onClose={() => setDraft(null)} onSave={save} />}
       {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
-    </div>
+      </div>
+    </>
   )
 }

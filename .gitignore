@@ -4,6 +4,12 @@ release/
 tmp-selftest/
 tmp-visual/
 .zcode/
+.claude/
+.agents/
+.vscode/
+.env
+.env.*
+*.local
 *.log
 .DS_Store
 Thumbs.db

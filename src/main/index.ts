@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { dataDir, loadStore, newId, saveStore } from './store'
@@ -21,7 +21,30 @@ function iconPath(): string | undefined {
   return fs.existsSync(p) ? p : undefined
 }
 
-function createWindow(): void {
+type ThemeMode = 'system' | 'light' | 'dark'
+
+function effectiveDark(theme: ThemeMode): boolean {
+  return theme === 'dark' || (theme === 'system' && nativeTheme.shouldUseDarkColors)
+}
+
+/** 原生窗口控件（最小化/最大化/关闭）与顶栏颜色跟随应用主题，避免系统标题栏与应用内配色割裂 */
+function overlayFor(dark: boolean): Electron.TitleBarOverlayOptions {
+  return dark
+    ? { color: '#121317', symbolColor: '#f0f1f3', height: 40 }
+    : { color: '#fbfbfd', symbolColor: '#1d1d1f', height: 40 }
+}
+
+function syncTitleBar(theme: ThemeMode): void {
+  if (process.platform !== 'win32' || !win) return
+  try {
+    win.setTitleBarOverlay(overlayFor(effectiveDark(theme)))
+  } catch {
+    /* overlay 未启用或平台不支持时忽略 */
+  }
+}
+
+function createWindow(theme: ThemeMode = 'system'): void {
+  const dark = effectiveDark(theme)
   win = new BrowserWindow({
     width: 1120,
     height: 740,
@@ -31,6 +54,9 @@ function createWindow(): void {
     autoHideMenuBar: true,
     title: 'CC Switch Local',
     icon: iconPath(),
+    backgroundColor: dark ? '#0d0e11' : '#f5f5f7',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: overlayFor(dark),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -171,6 +197,7 @@ function registerIpc(): void {
     store.settings = { ...store.settings, ...patch }
     await saveStore(store)
     applySettings(store.settings)
+    syncTitleBar(store.settings.theme)
     return store.settings
   })
 
@@ -218,7 +245,10 @@ if (!app.requestSingleInstanceLock()) {
     const store = loadStore()
     applySettings(store.settings)
     initUpdater(() => loadStore().settings.autoUpdate)
-    createWindow()
+    createWindow(store.settings.theme)
+    nativeTheme.on('updated', () => {
+      if (loadStore().settings.theme === 'system') syncTitleBar('system')
+    })
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })

@@ -1,0 +1,3 @@
+#!/bin/sh
+# 提交门禁：白名单 + 隐私扫描（脚本随仓库提交，`git config core.hooksPath scripts/githooks` 激活）
+node scripts/check-release.mjs || exit 1

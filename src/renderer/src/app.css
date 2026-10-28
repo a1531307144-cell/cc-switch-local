@@ -12,6 +12,38 @@ body,
   margin: 0;
 }
 
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- 自绘标题条（原生窗口控件色由主进程 titleBarOverlay 同步主题） ---------- */
+.titlebar {
+  height: 40px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+}
+
+.titlebar img {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-micro);
+  pointer-events: none;
+}
+
+.titlebar-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
 body {
   font-family: 'MiSans VF', system-ui, 'Segoe UI', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
@@ -50,10 +82,11 @@ code {
   color: var(--muted);
 }
 
-/* ---------- 应用骨架：窗口底 + 悬浮侧栏 + 呼吸缝画布 ---------- */
+/* ---------- 应用骨架：标题条 + 窗口底 + 悬浮侧栏 + 呼吸缝画布 ---------- */
 .app {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  height: 100vh;
   padding: 8px;
   gap: 8px;
   background: var(--bg);
@@ -585,6 +618,68 @@ code {
 
 .backup-table tbody tr {
   border-top: 1px solid var(--border);
+}
+
+/* ---------- 动画（尊重系统"减少动态效果"设置） ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .nav,
+  .btn,
+  .card {
+    transition:
+      background-color 0.12s ease,
+      border-color 0.12s ease,
+      color 0.12s ease,
+      box-shadow 0.15s ease;
+  }
+
+  .modal-overlay {
+    animation: cs-fade 0.16s ease;
+  }
+
+  .modal {
+    animation: cs-pop 0.2s cubic-bezier(0.2, 0.8, 0.3, 1.05);
+  }
+
+  .toast {
+    animation: cs-rise 0.24s cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+
+  .test-result {
+    animation: cs-fade 0.2s ease;
+  }
+
+  .empty,
+  .settings section {
+    animation: cs-fade 0.24s ease;
+  }
+}
+
+@keyframes cs-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cs-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+}
+
+@keyframes cs-rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+
+/* 键盘可达性：Tab 聚焦环 */
+.btn:focus-visible,
+.nav:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* ---------- 提示条（胶囊） ---------- */

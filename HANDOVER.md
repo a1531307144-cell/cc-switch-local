@@ -99,6 +99,8 @@ npx electron-builder --win --publish never
 
 > ⚠️ 用户规则：**对外发布前必须逐项隐私扫描；未经用户明确同意不得 push**。发布前先读用户的全局 AGENTS.md。
 
+> **提交/发布统一走门禁（2026-10-29 起强制）**：pre-commit 钩子（`scripts/githooks/`，经 `git config core.hooksPath` 激活）自动运行 `scripts/check-release.mjs`——暂存文件白名单 + 运行时隐私扫描（本机用户名/GitHub 账号运行时读取，仓库内零敏感词）。被拦截时读懂输出再处理；**不要用 --force 绕过**。教训来源：2026-10-28 `.zcode/plans` 会话文件曾被 `git add -A` 带进提交，靠白名单层才防住"陌生文件混入"这类 grep 扫不到的问题。
+
 0. **发布配置已就位**（2026-10-28 已完成）：`package.json` 已加 `repository` 字段，`electron-builder.yml` 已启用 `publish: {provider: github, releaseType: release}`。以后发布**跳过本步**，直接从第 1 步开始。
 1. **隐私扫描**（逐条跑，全部无输出才算过）：
    ```bash
@@ -156,6 +158,7 @@ approval_policy = "on-request"
 7. 用户是新手：交付物要"双击就能用"；每装一个包都要按 AGENTS.md 报备；生成文件要列冗余清单问用户删不删。
 8. **一次写盘失败会毒化串行写队列**：saveStore 曾用 `chain = chain.then(...)` 链式写法，失败后所有保存静默失效——已修复（失败与队列解耦）。新增 IPC 入口时**必须在主进程侧校验入参**（参考 `validateProviderInput`），渲染层校验只是 UX 不是安全边界。
 9. **preload 沙箱**：`sandbox: true` 与 electron-vite 打包的 preload（只 require electron）兼容，已实机验证通过；不要为省事改回 `false`。窗口的 `setWindowOpenHandler` / `will-navigate` / `setPermissionRequestHandler` 三道加固同理，别拆。
+10. **CDP 触发页面刷新用 `Page.reload` 命令**，不要用 `Runtime.evaluate('location.reload()')`——后者可能被静默吞掉（表现为"改了设置但截图没变"，2026-10-29 实测）。另外 `await` 一个 reload 的 evaluate 会因上下文销毁永久挂死；测试脚本里所有 CDP send 都要带超时。
 
 ## 9. 路线图（用户已认可的优先级）
 
