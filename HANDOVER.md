@@ -180,7 +180,18 @@ approval_policy = "on-request"
 - **字体 MiSans**：`misans` 包的 VF 版（`import 'misans/lib/Normal/MiSansVF.min.css'`，unicode-range 分包按需加载）。不要引入普通 TTF 全量版。
 - **品牌图标再生成**：源图（用户提供的幼苗图）+ `tmp-visual/make-icon.js`（offscreen canvas：底色检测 → squircle 遮罩内缩 5px 防白边 → 边缘带染底板米白）输出 `build/icon.png`（electron-builder 取用，自动转 ico）与 `src/renderer/src/assets/logo.png`（侧栏 logo）。tmp-visual 在 .gitignore，脚本内容见仓库历史。
 
-## 10. 给接手 agent 的硬性规则（与用户全局 AGENTS.md 一致）
+## 10. 安全与网络行为审计（2026-10-29，用户硬性规则）
+
+> **用户规则：开发环境与用户使用环境必须严格隔离；绝对不允许 API Key 有任何上传的可能性。**
+
+- **全库唯一主动网络出口**：`src/main/test.ts` 的连接测试（用户点击"测试"按钮才发起，目标是用户自己填写的端点——把该供应商的 Key 发给该端点即功能本身）。
+- **electron-updater**：仅访问 GitHub Releases 元数据/安装包（更新功能），不携带任何用户数据。
+- **零遥测、零日志**：全库无 console 输出；`dependencies` 仅 3 个（@iarna/toml、electron-updater、misans），无任何分析/上报组件。
+- **开发/用户环境结构性隔离**：`store.ts dataDir()` 在未打包模式自动使用 `userData + "-dev"`，`npm run dev` **永远碰不到**已安装应用的数据；测试性启动（跑打包产物做验证）**必须**设置 `CCS_DATA_DIR` + `CCS_HOME_OVERRIDE` 指向临时目录。
+- **cc-switch 导入去重**（v0.3.1）：导入前与现有库按 `baseUrl|apiKey` 去重，重复点击不会堆积（此前用户真实数据出现同一批 10 条被导入 8 遍——用户数据文件未动，待用户自行决定是否清理）。
+- **公开仓库零隐私**：门禁（pre-commit）+ 全量 HEAD 扫描双重保障；跟踪文件中的 sk- 长串仅存在于 selftest.ts（合成数据）。
+
+## 11. 给接手 agent 的硬性规则（与用户全局 AGENTS.md 一致）
 
 - 安装任何包/工具/脚本后，**单独一行报备**：装了什么/方式/位置/版本。
 - 对外发布（push/tag/Release）前**逐项隐私扫描**（§6 步骤 1），且必须用户点头。

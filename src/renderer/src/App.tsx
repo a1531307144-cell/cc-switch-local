@@ -134,7 +134,7 @@ export default function App() {
     try {
       const rep = await window.api.ccswitchImport()
       if (rep.imported === 0) {
-        notify(`没有可导入的供应商。${rep.details.join('；')}`, 'err')
+        notify(`没有需要导入的新供应商。${rep.details.join('；')}`, 'err')
         return
       }
       let i = 0

@@ -175,14 +175,34 @@ export async function runSelfTest(): Promise<void> {
       const hit = report.providers.find((p) => p.baseUrl === 'https://legacy.example.com')
       assert(!!hit, '未挖到 legacy.example.com')
       assert(hit?.apiKey === 'sk-legacy-000111222333', 'Key 提取不正确')
+
+      // 去重：把挖到的供应商存入库后，再次导入必须排除它
+      const s = loadStore()
+      s.providers.push({
+        id: newId(),
+        tool: 'claude',
+        name: hit!.name ?? '旧版中转站',
+        baseUrl: hit!.baseUrl,
+        apiKey: hit!.apiKey,
+        keyType: hit!.keyType,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      })
+      await saveStore(s)
+      const again = await importFromCcSwitch()
+      assert(
+        !again.providers.some((p) => p.baseUrl === 'https://legacy.example.com'),
+        '重复导入应排除已存在的供应商'
+      )
     })
 
     await step('删除供应商：从存储中移除且不影响其它', async () => {
       const s = loadStore()
+      const before = s.providers.length
       s.providers = s.providers.filter((p) => p.id !== pb.id)
       await saveStore(s)
       const reloaded = loadStore()
-      assert(reloaded.providers.length === 2, `应剩 2 条，实际 ${reloaded.providers.length}`)
+      assert(reloaded.providers.length === before - 1, `应剩 ${before - 1} 条，实际 ${reloaded.providers.length}`)
       assert(reloaded.providers.every((p) => p.id !== pb.id), '供应商B 应被删除')
     })
   }

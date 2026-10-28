@@ -11,9 +11,17 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system'
 }
 
-/** 数据目录可用 CCS_DATA_DIR 覆盖（自测用），默认走 Electron userData */
+/**
+ * 数据目录解析顺序：
+ *   1. CCS_DATA_DIR 环境变量（自测/隔离用）
+ *   2. 未打包（npm run dev / 直接跑 electron .）→ userData + "-dev"：
+ *      开发环境与用户已安装应用的数据【结构性隔离】，开发调试永远碰不到真实供应商数据（含 API Key）
+ *   3. 已打包 → 正常 userData
+ */
 export function dataDir(): string {
-  return process.env.CCS_DATA_DIR || app.getPath('userData')
+  if (process.env.CCS_DATA_DIR) return process.env.CCS_DATA_DIR
+  const base = app.getPath('userData')
+  return app.isPackaged ? base : `${base}-dev`
 }
 
 export function storeFile(): string {

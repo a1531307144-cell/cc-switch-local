@@ -1,5 +1,6 @@
 import path from 'node:path'
 import fsp from 'node:fs/promises'
+import { loadStore } from './store'
 import { homeDir } from './claude'
 import type { ImportReport, KeyType } from '../shared/types'
 
@@ -47,11 +48,16 @@ export async function importFromCcSwitch(): Promise<ImportReport> {
     return true
   })
 
+  // 与现有供应商库去重：重复点击"从 cc-switch 导入"不得堆积重复项
+  // （2026-10-29 教训：用户真实数据里同一批 10 条被导入了 8 遍）
+  const existing = new Set(loadStore().providers.map((p) => `${p.baseUrl}|${p.apiKey}`))
+  const fresh = unique.filter((u) => !existing.has(`${u.baseUrl}|${u.apiKey}`))
+
   return {
-    imported: unique.length,
-    skipped: found.length - unique.length,
+    imported: fresh.length,
+    skipped: found.length - fresh.length,
     details,
-    providers: unique.map((u) => ({ name: u.name, baseUrl: u.baseUrl, apiKey: u.apiKey, keyType: u.keyType, source: u.source }))
+    providers: fresh.map((u) => ({ name: u.name, baseUrl: u.baseUrl, apiKey: u.apiKey, keyType: u.keyType, source: u.source }))
   }
 }
 
