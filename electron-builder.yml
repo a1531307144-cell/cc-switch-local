@@ -17,6 +17,6 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   shortcutName: CC Switch Local
-# 发布到 GitHub Releases 时需要加回（见 HANDOVER.md「发布流程」）：
-# publish:
-#   provider: github
+publish:
+  provider: github
+  releaseType: release

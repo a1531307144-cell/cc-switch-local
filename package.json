@@ -5,6 +5,7 @@
   "main": "./out/main/index.js",
   "author": "cc-switch-local contributors",
   "license": "MIT",
+  "repository": "https://github.com/a1531307144-cell/cc-switch-local.git",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",

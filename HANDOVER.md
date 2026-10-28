@@ -20,8 +20,8 @@
 | 端到端自测（10 项断言） | ✅ 10/10 通过（隔离目录运行，未触碰真实配置） |
 | Windows NSIS 安装包 | ✅ 已产出 `release/CC Switch Local Setup 0.1.0.exe` |
 | README / LICENSE / release.yml | ✅ 就绪 |
-| git 仓库 + 首次提交 | ✅ 本地已提交（**尚未推送到 GitHub**） |
-| GitHub 仓库 | ⏳ 等用户确认后创建（见 §6 发布流程） |
+| git 仓库 + 首次提交 | ✅ 已推送到 GitHub |
+| GitHub 仓库 | ✅ `a1531307144-cell/cc-switch-local`（公开，2026-10-28 用户确认发布） |
 
 **明确没做的**（用户已认可放进 v2）：主密码加密、托盘常驻、用量统计、本地路由/聚合、更多工具支持（Gemini CLI 等）、MCP 管理、多语言。完整清单见 §9。
 
@@ -97,9 +97,7 @@ npx electron-builder --win --publish never
 
 > ⚠️ 用户规则：**对外发布前必须逐项隐私扫描；未经用户明确同意不得 push**。发布前先读用户的全局 AGENTS.md。
 
-0. **发不出去的根因先记着**：本地打包时仓库还没有远端，electron-builder 的 `publish: {provider: github}` 缺 owner 会出问题，所以当前 yml 里 publish 块是注释掉的。首次发布前：
-   - `package.json` 加 `"repository": "https://github.com/<用户名>/cc-switch-local.git"`；
-   - `electron-builder.yml` 把末尾注释的 `publish:` 块恢复启用。
+0. **发布配置已就位**（2026-10-28 已完成）：`package.json` 已加 `repository` 字段，`electron-builder.yml` 已启用 `publish: {provider: github, releaseType: release}`。以后发布**跳过本步**，直接从第 1 步开始。
 1. **隐私扫描**（逐条跑，全部无输出才算过）：
    ```bash
    git add -A          # 血泪教训：必须先 add 再扫，否则新文件漏扫
