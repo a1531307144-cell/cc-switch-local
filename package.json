@@ -1,6 +1,6 @@
 {
   "name": "cc-switch-local",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "本地优先的 AI 编码工具 API 供应商管理与一键切换工具（Claude Code / Codex）",
   "main": "./out/main/index.js",
   "author": "cc-switch-local contributors",
@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.3.9",
+    "misans": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

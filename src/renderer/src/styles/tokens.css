@@ -1,0 +1,74 @@
+/* CC Switch Local 全局设计令牌（对齐 LexBench 设计语言，v0.2.0 起）
+   结构参考 LexBench tokens.css；强调色取自品牌图标幼苗（鼠尾草绿）。
+   使用规则：组件样式一律引用令牌，不要硬编码色值/圆角。 */
+
+:root {
+  /* ---------- 颜色（浅色 · Apple 系） ---------- */
+  --bg: #f5f5f7; /* 窗口底 */
+  --panel: #ffffff; /* 主画布 / 卡片 */
+  --chrome: #fbfbfd; /* 侧栏等窗口 chrome */
+  --text: #1d1d1f;
+  --muted: #86868b;
+  --border: rgba(0, 0, 0, 0.07);
+  --border-strong: rgba(0, 0, 0, 0.12);
+  --overlay: rgba(0, 0, 0, 0.42);
+  --chip: #e8e8ed; /* 徽标底 */
+
+  /* 强调色：幼苗绿（浅色用深鼠尾草绿保证白字可读；做文字时用 ink） */
+  --accent: #6b8f77;
+  --accent-hover: #5f8270;
+  --accent-ink: #52735e; /* 浅底上作为文字/图标的深绿 */
+  --accent-soft: rgba(107, 143, 119, 0.14);
+
+  /* 语义状态色（浅底深字） */
+  --ok: #16a34a;
+  --ok-ink: #137a3a;
+  --ok-soft: #e8f7ee;
+  --err: #e5484d;
+  --err-ink: #c53030;
+  --err-soft: #fdecec;
+
+  /* ---------- 圆角阶梯（大 R 角语言） ---------- */
+  --r-micro: 4px;
+  --r-xs: 8px; /* 小按钮 / 小件 */
+  --r-s: 12px; /* 按钮 / 输入框 */
+  --r-l: 18px; /* 卡片 / 浮层 / 列表行 */
+  --r-xl: 26px; /* 侧栏 / 对话框 / 主画布 */
+  --r-full: 999px; /* 胶囊 / 徽标 */
+
+  /* ---------- 阴影三档（低透明度多层） ---------- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.07);
+  --shadow-3: 0 4px 12px rgba(0, 0, 0, 0.08), 0 16px 48px rgba(0, 0, 0, 0.14);
+}
+
+:root[data-theme='dark'] {
+  --bg: #0d0e11;
+  --panel: #16181d;
+  --chrome: #121317;
+  --text: #f0f1f3;
+  --muted: #98a0aa;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --overlay: rgba(0, 0, 0, 0.6);
+  --chip: rgba(255, 255, 255, 0.1);
+
+  /* 暗色强调色：亮鼠尾草绿（亮底深字的按钮 + 暗底亮字均有足够对比） */
+  --accent: #9dbba3;
+  --accent-hover: #accbb2;
+  --accent-ink: #9dbba3;
+  --accent-soft: rgba(157, 187, 163, 0.16);
+
+  --ok: #4ade80;
+  --ok-ink: #4ade80;
+  --ok-soft: #17301f;
+  --err: #f87171;
+  --err-ink: #f87171;
+  --err-soft: #3a1d1d;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.32), 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-3: 0 4px 12px rgba(0, 0, 0, 0.36), 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+
+/* squircle（连续曲率）：Chromium 140+ 支持 corner-shape，不支持时自动回退 border-radius */

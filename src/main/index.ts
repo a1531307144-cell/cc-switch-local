@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'node:path'
+import fs from 'node:fs'
 import { dataDir, loadStore, newId, saveStore } from './store'
 import * as claude from './claude'
 import * as codex from './codex'
@@ -14,6 +15,12 @@ const SELFTEST = process.argv.includes('--selftest')
 
 let win: BrowserWindow | null = null
 
+/** dev 模式下窗口/任务栏也显示品牌图标；打包后 Windows 自动取 exe 内嵌 ico */
+function iconPath(): string | undefined {
+  const p = path.join(__dirname, '../../build/icon.png')
+  return fs.existsSync(p) ? p : undefined
+}
+
 function createWindow(): void {
   win = new BrowserWindow({
     width: 1120,
@@ -23,6 +30,7 @@ function createWindow(): void {
     show: !SELFTEST,
     autoHideMenuBar: true,
     title: 'CC Switch Local',
+    icon: iconPath(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,

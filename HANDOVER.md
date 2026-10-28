@@ -160,11 +160,22 @@ approval_policy = "on-request"
 ## 9. 路线图（用户已认可的优先级）
 
 1. 主密码加密存储 API Key（用户关心安全，此为最痛需求）
-2. 托盘常驻 + 快捷切换（需要补一个像样的应用图标，当前用 Electron 默认图标）
-3. 用量统计（扫描 `~/.claude/projects` 会话日志；格式会变，要做容错）
-4. 本地路由/故障转移（原版聚合模式；工程量大，单独规划）
-5. Gemini CLI / OpenCode 等更多工具；MCP 管理；多语言
-6. 发布后事项：README 补 Release 下载链接与真实开源地址；考虑让用户申请代码签名证书
+2. 用量统计（扫描 `~/.claude/projects` 会话日志；格式会变，要做容错）
+3. 本地路由/故障转移（原版聚合模式；工程量大，单独规划）
+4. Gemini CLI / OpenCode 等更多工具；MCP 管理；多语言
+5. 发布后事项：README 补 Release 下载链接与真实开源地址；考虑让用户申请代码签名证书
+
+## 9.5 视觉规范（v0.2.0 定稿，改样式前必读）
+
+设计语言对齐用户的另一款软件 LexBench（Apple 式：大 R 角 + squircle + 极轻多层阴影 + 单强调色纪律）。
+
+- **令牌唯一事实来源**：`src/renderer/src/styles/tokens.css`。组件样式一律引用令牌变量，**禁止硬编码色值/圆角**。
+- **强调色 = 品牌幼苗绿**（取自 `build/icon.png` 的鼠尾草绿）：浅色 `--accent: #6b8f77`（按钮底、白字），文字/图标态用 `--accent-ink: #52735e`；暗色 `#9dbba3`。语义成功色 `--ok` 是饱和正绿，靠饱和度与用途区分，不要混用。
+- **圆角阶梯**：4（微角）/ 8（小按钮）/ 12（按钮输入）/ 18（卡片浮层）/ 26（侧栏·对话框·主画布）/ 999（胶囊徽标）。R≥18 的表面同时声明 `corner-shape: squircle`（Chromium 140+ 生效，旧环境自动回退普通圆角）。
+- **布局骨架**：窗口底 `--bg` + 悬浮侧栏（8px 间距、radius 26、`--chrome` 底、shadow-2）+ 主画布（radius 26、四周呼吸缝）。分割线用 `.fade-line` 渐隐线，不用通栏直线。
+- **阴影三档** shadow-1/2/3（低透明度多层），分层优先靠底色差和描边，别堆阴影。
+- **字体 MiSans**：`misans` 包的 VF 版（`import 'misans/lib/Normal/MiSansVF.min.css'`，unicode-range 分包按需加载）。不要引入普通 TTF 全量版。
+- **品牌图标再生成**：源图（用户提供的幼苗图）+ `tmp-visual/make-icon.js`（offscreen canvas：底色检测 → squircle 遮罩内缩 5px 防白边 → 边缘带染底板米白）输出 `build/icon.png`（electron-builder 取用，自动转 ico）与 `src/renderer/src/assets/logo.png`（侧栏 logo）。tmp-visual 在 .gitignore，脚本内容见仓库历史。
 
 ## 10. 给接手 agent 的硬性规则（与用户全局 AGENTS.md 一致）
 

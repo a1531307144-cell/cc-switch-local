@@ -2,6 +2,8 @@ node_modules/
 out/
 release/
 tmp-selftest/
+tmp-visual/
+.zcode/
 *.log
 .DS_Store
 Thumbs.db

@@ -3,6 +3,7 @@ import type { Provider, StoreShape, ToolId, ToolStatus } from '../../shared/type
 import ProviderCard from './components/ProviderCard'
 import ProviderForm, { emptyDraft, type FormDraft } from './components/ProviderForm'
 import SettingsPanel from './components/SettingsPanel'
+import logoUrl from './assets/logo.png'
 
 type View = ToolId | 'settings'
 
@@ -161,7 +162,7 @@ export default function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <div className="logo">⇄</div>
+          <img className="logo-img" src={logoUrl} alt="" draggable={false} />
           <div>
             <div className="brand-name">CC Switch Local</div>
             <div className="brand-sub">本地 API 供应商管理</div>
