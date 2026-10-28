@@ -45,6 +45,12 @@ async function backupFile(dir: string, name: string): Promise<string | null> {
  * 注意：TOML 解析-重写会丢失注释，写入前自动备份。
  */
 export async function switchCodex(provider: Provider | null): Promise<SwitchResult> {
+  if (provider) {
+    if (!/^https?:\/\//i.test(provider.baseUrl)) {
+      throw new Error(`非法的 Base URL（仅允许 http/https）：${provider.baseUrl}`)
+    }
+    if (!provider.apiKey) throw new Error('API Key 不能为空')
+  }
   await fsp.mkdir(codexDir(), { recursive: true })
   const backups: string[] = []
   for (const name of ['config.toml', 'auth.json']) {

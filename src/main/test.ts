@@ -3,6 +3,9 @@ import type { TestInput, TestResult } from '../shared/types'
 
 /** 发一个最小请求验证可达性与鉴权。注意会产生极少量 token 消耗。 */
 export async function testProvider(input: TestInput): Promise<TestResult> {
+  if (!/^https?:\/\//i.test(input.baseUrl)) {
+    return { ok: false, kind: 'network', message: 'Base URL 非法（仅允许 http/https）' }
+  }
   const base = input.baseUrl.replace(/\/+$/, '')
   const started = Date.now()
   const controller = new AbortController()

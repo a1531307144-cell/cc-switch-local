@@ -26,6 +26,7 @@ export default function ProviderCard({
   const [confirming, setConfirming] = useState(false)
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<TestResult | null>(null)
+  const maskedKey = provider.apiKey.length <= 8 ? '****' : `${provider.apiKey.slice(0, 4)}****${provider.apiKey.slice(-4)}`
 
   const runTest = async () => {
     setTesting(true)
@@ -100,7 +101,7 @@ export default function ProviderCard({
       </div>
       <div className="meta">
         <code className="url">{provider.baseUrl}</code>
-        <span className="key">Key：{provider.apiKey.slice(0, 4)}****{provider.apiKey.slice(-4)}</span>
+        <span className="key">Key：{maskedKey}</span>
       </div>
       {provider.notes && <div className="notes">{provider.notes}</div>}
       {result && (

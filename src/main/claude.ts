@@ -30,12 +30,22 @@ export function stamp(): string {
 async function readSettings(): Promise<Record<string, unknown>> {
   const p = claudeSettingsPath()
   try {
-    return JSON.parse(await fsp.readFile(p, 'utf8')) as Record<string, unknown>
+    let raw = await fsp.readFile(p, 'utf8')
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1)
+    return JSON.parse(raw) as Record<string, unknown>
   } catch (e) {
     const err = e as NodeJS.ErrnoException
     if (err?.code === 'ENOENT') return {}
     throw new Error(`读取 settings.json 失败：${err?.message ?? e}（已中止，不会写入）`)
   }
+}
+
+/** 主进程侧输入校验：IPC 是安全边界，不信任渲染层 */
+function assertValidProvider(provider: Provider): void {
+  if (!/^https?:\/\//i.test(provider.baseUrl)) {
+    throw new Error(`非法的 Base URL（仅允许 http/https）：${provider.baseUrl}`)
+  }
+  if (!provider.apiKey) throw new Error('API Key 不能为空')
 }
 
 async function backupSettings(): Promise<string | null> {
@@ -62,6 +72,7 @@ async function pruneBackups(): Promise<void> {
 
 /** provider 为 null 表示「恢复官方登录」：清掉本工具接管的 env 键 */
 export async function switchClaude(provider: Provider | null): Promise<SwitchResult> {
+  if (provider) assertValidProvider(provider)
   const data = await readSettings()
   const backup = await backupSettings()
   const env = { ...((data.env as Record<string, unknown>) ?? {}) }

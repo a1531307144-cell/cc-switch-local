@@ -45,17 +45,26 @@ export function loadStore(): StoreShape {
 
 let writeChain: Promise<void> = Promise.resolve()
 
-/** 串行化写入，避免并发覆盖 */
+/**
+ * 串行化写入，避免并发覆盖。
+ * 注意：失败不能毒化队列——否则一次写盘失败后，后续所有保存都会被静默跳过。
+ */
 export function saveStore(store: StoreShape): Promise<void> {
-  writeChain = writeChain.then(() => atomicWrite(storeFile(), JSON.stringify(store, null, 2)))
-  return writeChain
+  const next = writeChain.then(() => atomicWrite(storeFile(), JSON.stringify(store, null, 2)))
+  writeChain = next.catch(() => {})
+  return next
 }
 
 export async function atomicWrite(file: string, content: string): Promise<void> {
   await fsp.mkdir(path.dirname(file), { recursive: true })
   const tmp = `${file}.tmp-${process.pid}-${Date.now()}`
-  await fsp.writeFile(tmp, content, 'utf8')
-  await fsp.rename(tmp, file)
+  try {
+    await fsp.writeFile(tmp, content, 'utf8')
+    await fsp.rename(tmp, file)
+  } catch (e) {
+    await fsp.rm(tmp, { force: true }).catch(() => {})
+    throw e
+  }
 }
 
 export function newId(): string {

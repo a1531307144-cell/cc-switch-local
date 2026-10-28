@@ -27,7 +27,7 @@ function createWindow(): void {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     }
   })
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -35,12 +35,17 @@ function createWindow(): void {
   } else {
     win.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
+  // Electron 官方安全清单：渲染层被攻破时不给导航/弹窗/任何 Web 权限
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', (e) => e.preventDefault())
+  win.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
   win.on('closed', () => {
     win = null
   })
 }
 
 function applySettings(settings: AppSettings): void {
+  if (!app.isPackaged) return
   try {
     app.setLoginItemSettings({ openAtLogin: settings.autoStart })
   } catch {
@@ -48,10 +53,31 @@ function applySettings(settings: AppSettings): void {
   }
 }
 
+const TOOL_IDS: ToolId[] = ['claude', 'codex']
+const KEY_TYPES: string[] = ['auth_token', 'api_key']
+const WIRE_APIS: string[] = ['responses', 'chat']
+const isStr = (v: unknown): v is string => typeof v === 'string'
+
+/** IPC 是安全边界：所有来自渲染层的入参都在主进程重新校验 */
+function validateProviderInput(input: ProviderInput): void {
+  if (!input || !TOOL_IDS.includes(input.tool)) throw new Error('非法的工具类型')
+  if (!isStr(input.name) || !input.name.trim() || input.name.length > 200) throw new Error('名称须为 1-200 个字符')
+  if (!isStr(input.baseUrl) || !/^https?:\/\//i.test(input.baseUrl.trim()) || input.baseUrl.length > 2000) {
+    throw new Error('Base URL 非法（仅允许 http/https，长度 ≤ 2000）')
+  }
+  if (!isStr(input.apiKey) || input.apiKey.length > 4000) throw new Error('API Key 非法（长度 ≤ 4000）')
+  if (input.keyType !== undefined && !KEY_TYPES.includes(input.keyType)) throw new Error('非法的 Key 类型')
+  if (input.wireApi !== undefined && !WIRE_APIS.includes(input.wireApi)) throw new Error('非法的 wire_api')
+  if (input.model !== undefined && (!isStr(input.model) || input.model.length > 200)) throw new Error('模型名过长')
+  if (input.notes !== undefined && (!isStr(input.notes) || input.notes.length > 2000)) throw new Error('备注过长')
+  if (input.id !== undefined && (!isStr(input.id) || input.id.length > 64)) throw new Error('非法的 id')
+}
+
 function registerIpc(): void {
   ipcMain.handle('store:get', () => loadStore())
 
   ipcMain.handle('provider:save', async (_e, input: ProviderInput) => {
+    validateProviderInput(input)
     const store = loadStore()
     const now = Date.now()
     if (input.id) {
@@ -141,8 +167,13 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('app:openPath', (_e, kind: 'data' | 'claudeConfig' | 'codexConfig') => {
-    const map = { data: dataDir(), claudeConfig: claude.claudeDir(), codexConfig: codex.codexDir() }
-    return shell.openPath(map[kind])
+    const map: Record<string, () => string> = {
+      data: dataDir,
+      claudeConfig: claude.claudeDir,
+      codexConfig: codex.codexDir
+    }
+    if (!(kind in map)) throw new Error('非法的路径类型')
+    return shell.openPath(map[kind]())
   })
 
   ipcMain.handle('app:version', () => app.getVersion())

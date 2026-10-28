@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Provider, StoreShape, ToolId, ToolStatus } from '../../shared/types'
 import ProviderCard from './components/ProviderCard'
 import ProviderForm, { emptyDraft, type FormDraft } from './components/ProviderForm'
@@ -24,9 +24,11 @@ export default function App() {
   const [busyTool, setBusyTool] = useState<ToolId | null>(null)
   const [importing, setImporting] = useState(false)
 
+  const toastTimer = useRef<number | undefined>(undefined)
   const notify = useCallback((text: string, kind: 'ok' | 'err' = 'ok') => {
     setToast({ text, kind })
-    window.setTimeout(() => setToast(null), 3600)
+    if (toastTimer.current !== undefined) window.clearTimeout(toastTimer.current)
+    toastTimer.current = window.setTimeout(() => setToast(null), 3600)
   }, [])
 
   const refresh = useCallback(async () => {

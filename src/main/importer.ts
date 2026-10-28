@@ -55,8 +55,11 @@ export async function importFromCcSwitch(): Promise<ImportReport> {
   }
 }
 
-/** 递归遍历 JSON，凡是有 ANTHROPIC_BASE_URL / base_url + key 的对象都算一条供应商 */
+/** 只认 ANTHROPIC_* 键——防止把 cc-switch 库里 Codex/Gemini 的 base_url 条目误导入成 Claude 供应商 */
+const MAX_IMPORT = 200
+
 function harvest(node: unknown, source: string, out: Harvested[]): void {
+  if (out.length >= MAX_IMPORT) return
   if (Array.isArray(node)) {
     node.forEach((n) => harvest(n, source, out))
     return
@@ -65,9 +68,9 @@ function harvest(node: unknown, source: string, out: Harvested[]): void {
   const obj = node as Record<string, unknown>
 
   const env = (obj.env && typeof obj.env === 'object' ? obj.env : obj) as Record<string, unknown>
-  const baseUrl = env.ANTHROPIC_BASE_URL ?? obj.base_url ?? obj.baseUrl
+  const baseUrl = env.ANTHROPIC_BASE_URL
   const auth = env.ANTHROPIC_AUTH_TOKEN
-  const apiKey = env.ANTHROPIC_API_KEY ?? obj.api_key ?? obj.apiKey
+  const apiKey = env.ANTHROPIC_API_KEY
   if (typeof baseUrl === 'string' && baseUrl.startsWith('http')) {
     const key = typeof auth === 'string' && auth ? auth : typeof apiKey === 'string' ? apiKey : ''
     if (key) {
