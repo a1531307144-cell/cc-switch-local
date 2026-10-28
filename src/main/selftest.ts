@@ -5,6 +5,7 @@ import { loadStore, newId, saveStore, storeFile } from './store'
 import * as claude from './claude'
 import * as codex from './codex'
 import { importFromCcSwitch } from './importer'
+import { detectVendor } from '../shared/vendors'
 
 interface Check {
   name: string
@@ -87,6 +88,21 @@ export async function runSelfTest(): Promise<void> {
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
+
+    await step('厂商识别：官方端点/仿冒域名/字母徽章/本地端点', async () => {
+      const ds = detectVendor('https://api.deepseek.com')
+      assert(ds?.id === 'deepseek' && ds.icon === 'deepseek', 'deepseek 识别失败')
+      const fake = detectVendor('https://api.deepseek.com.evil.com')
+      assert(fake === null, '仿冒域名不应识别为 deepseek')
+      const oa = detectVendor('https://api.openai.com/v1')
+      assert(oa?.id === 'openai' && !oa.icon && oa.letter === 'O', 'openai 应使用字母徽章')
+      const ol = detectVendor('http://127.0.0.1:11434')
+      assert(ol?.id === 'ollama', 'ollama 本地端口识别失败')
+      const local = detectVendor('http://localhost:8080')
+      assert(local?.id === 'local', '通用本地端点识别失败')
+      const unknown = detectVendor('https://a.example.com')
+      assert(unknown === null, '未知端点应返回 null')
+    })
 
     await step('存储：写入三个供应商并持久化', async () => {
       store.providers.push(pa, pb, pc)

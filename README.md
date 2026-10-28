@@ -13,6 +13,7 @@
 - **一键切换**：写 `~/.claude/settings.json`（Claude Code）或 `~/.codex/config.toml` + `auth.json`（Codex），**只改 API 相关的键，其余配置原样保留**
 - **自动备份**：每次写入前自动备份，保留最近 10 份，可在「设置」里一键恢复
 - **恢复官方配置**：一键清除本工具写入的代理键，回到官方登录状态
+- **厂商识别与图标**：内置 DeepSeek / Anthropic / Moonshot Kimi / Qwen / OpenRouter / Ollama 等厂商图标与官方名称，按端点自动识别、可视化选用；识别不出的中转站显示中性样式。图标在构建时打包进应用，**运行时不联网请求任何图标**
 - **连接测试**：向供应商发一个最小请求，验证可达性与鉴权（注意会产生极少量 token 消耗）
 - **导入当前配置**：把已存在于工具配置里的 API 设置一键带入管理
 - **从 cc-switch 迁移**：自动从原版 cc-switch 的旧版 `config.json` 或新版数据库里挖出供应商列表
@@ -97,6 +98,8 @@ GitHub Actions（`.github/workflows/release.yml`）会在 Windows 环境构建�
 ## License
 
 [MIT](./LICENSE)
+
+厂商图标来自 [simple-icons](https://simpleicons.org)（CC0 协议），相关品牌商标归各厂商所有，仅用于端点识别用途。
 
 ## 免责声明
 

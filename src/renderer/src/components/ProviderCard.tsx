@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import type { Provider, TestResult } from '../../../shared/types'
+import { detectVendor } from '../../../shared/vendors'
+import { VendorChip } from './ui'
 
 function testBadge(r: TestResult): { text: string; cls: string } {
   if (r.kind === 'ok') return { text: `✓ 连通正常 · ${r.latencyMs}ms`, cls: 'ok' }
@@ -27,6 +29,7 @@ export default function ProviderCard({
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<TestResult | null>(null)
   const maskedKey = provider.apiKey.length <= 8 ? '****' : `${provider.apiKey.slice(0, 4)}****${provider.apiKey.slice(-4)}`
+  const vendor = detectVendor(provider.baseUrl)
 
   const runTest = async () => {
     setTesting(true)
@@ -53,6 +56,7 @@ export default function ProviderCard({
       <div className="row">
         <div className="title">
           <strong>{provider.name}</strong>
+          {vendor && <VendorChip vendor={vendor} />}
           {isCurrent && <span className="badge accent">使用中</span>}
           {provider.tool === 'claude' ? (
             <span className="badge">{provider.keyType === 'api_key' ? 'ANTHROPIC_API_KEY' : 'ANTHROPIC_AUTH_TOKEN'}</span>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { KeyType, Preset, ToolId } from '../../../shared/types'
-import { Modal } from './ui'
+import { detectVendor } from '../../../shared/vendors'
+import { Modal, VendorChip } from './ui'
 
 export interface FormDraft {
   id?: string
@@ -90,6 +91,12 @@ export default function ProviderForm({
             onChange={(e) => set({ baseUrl: e.target.value })}
             placeholder="https://api.example.com"
           />
+          {detectVendor(form.baseUrl.trim()) && (
+            <span className="vendor-hint">
+              <VendorChip vendor={detectVendor(form.baseUrl.trim())!} />
+              <span>已按端点自动识别</span>
+            </span>
+          )}
         </label>
 
         <label>
