@@ -396,9 +396,16 @@ code {
   color: var(--err-ink);
 }
 
+.update-download-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+}
+
 .update-bar {
   flex: 1;
-  min-width: 160px;
   height: 8px;
   border-radius: var(--r-full);
   background: var(--chip);

@@ -27,7 +27,10 @@ export default function App() {
   const [updateState, setUpdateState] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded'>('idle')
   const [updateVersion, setUpdateVersion] = useState('')
   const [updatePercent, setUpdatePercent] = useState(0)
+  const [updateBytes, setUpdateBytes] = useState<{ transferred: number; total: number; bps: number } | null>(null)
   const [updateError, setUpdateError] = useState('')
+
+  const fmtMB = (n: number): string => `${(n / 1048576).toFixed(1)} MB`
 
   const toastTimer = useRef<number | undefined>(undefined)
   const notify = useCallback((text: string, kind: 'ok' | 'err' = 'ok') => {
@@ -57,7 +60,10 @@ export default function App() {
       setUpdateError('')
       setUpdateState('available')
     })
-    const un2 = window.api.onUpdateProgress((p) => setUpdatePercent(p.percent))
+    const un2 = window.api.onUpdateProgress((p) => {
+      setUpdatePercent(p.percent)
+      if (p.total) setUpdateBytes({ transferred: p.transferred ?? 0, total: p.total, bps: p.bytesPerSecond ?? 0 })
+    })
     const un3 = window.api.onUpdateDownloaded(() => setUpdateState('downloaded'))
     return () => {
       un1()
@@ -89,13 +95,20 @@ export default function App() {
   const startDownload = useCallback(async () => {
     setUpdateState('downloading')
     setUpdatePercent(0)
+    setUpdateBytes(null)
     setUpdateError('')
     const r = await window.api.updateDownload()
     if (r.error) {
       setUpdateError(r.error)
-      setUpdateState('available')
+      setUpdateState('idle')
       notify(r.error, 'err')
     }
+  }, [])
+
+  const cancelDownload = useCallback(async () => {
+    await window.api.updateCancel()
+    setUpdateState('idle')
+    setUpdateBytes(null)
   }, [])
 
   const theme = store?.settings.theme
@@ -256,9 +269,25 @@ export default function App() {
         )}
         {updateState === 'downloading' && (
           <div className="update-banner">
-            <span>正在下载更新… {updatePercent}%</span>
-            <div className="update-bar">
-              <div className="update-bar-fill" style={{ width: `${updatePercent}%` }} />
+            <span>
+              正在下载 v{updateVersion}…
+              {updateBytes ? (
+                <>
+                  {' '}
+                  {fmtMB(updateBytes.transferred)} / {fmtMB(updateBytes.total)}
+                  {updateBytes.bps > 0 ? `（${fmtMB(updateBytes.bps)}/s）` : ''}
+                </>
+              ) : (
+                ` ${updatePercent}%`
+              )}
+            </span>
+            <div className="update-download-row">
+              <div className="update-bar">
+                <div className="update-bar-fill" style={{ width: `${updatePercent}%` }} />
+              </div>
+              <button className="btn ghost sm" onClick={cancelDownload}>
+                取消
+              </button>
             </div>
           </div>
         )}

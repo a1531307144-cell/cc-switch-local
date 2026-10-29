@@ -119,9 +119,10 @@ export interface Api {
   appVersion(): Promise<string>
   updateCheck(): Promise<{ version?: string | null; current?: string; error?: string }>
   updateDownload(): Promise<{ ok?: boolean; error?: string }>
+  updateCancel(): Promise<{ ok?: boolean; error?: string }>
   updateInstall(): Promise<{ ok?: boolean; error?: string }>
   onUpdateAvailable(cb: (p: { version: string }) => void): () => void
-  onUpdateProgress(cb: (p: { percent: number }) => void): () => void
+  onUpdateProgress(cb: (p: { percent: number; transferred?: number; total?: number; bytesPerSecond?: number }) => void): () => void
   onUpdateDownloaded(cb: () => void): () => void
   openReleases(): Promise<void>
 }

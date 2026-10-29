@@ -18,14 +18,15 @@ const api: Api = {
   appVersion: () => ipcRenderer.invoke('app:version'),
   updateCheck: () => ipcRenderer.invoke('update:check'),
   updateDownload: () => ipcRenderer.invoke('update:download'),
+  updateCancel: () => ipcRenderer.invoke('update:cancel'),
   updateInstall: () => ipcRenderer.invoke('update:install'),
   onUpdateAvailable: (cb: (p: { version: string }) => void) => {
     const l = (_e: unknown, p: { version: string }) => cb(p)
     ipcRenderer.on('update:available', l)
     return () => ipcRenderer.removeListener('update:available', l as never)
   },
-  onUpdateProgress: (cb: (p: { percent: number }) => void) => {
-    const l = (_e: unknown, p: { percent: number }) => cb(p)
+  onUpdateProgress: (cb: (p: { percent: number; transferred?: number; total?: number; bytesPerSecond?: number }) => void) => {
+    const l = (_e: unknown, p: { percent: number; transferred?: number; total?: number; bytesPerSecond?: number }) => cb(p)
     ipcRenderer.on('update:progress', l)
     return () => ipcRenderer.removeListener('update:progress', l as never)
   },

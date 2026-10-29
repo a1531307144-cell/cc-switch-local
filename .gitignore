@@ -3,6 +3,7 @@ out/
 release/
 tmp-selftest/
 tmp-visual/
+tmp-e2e/
 .zcode/
 .claude/
 .agents/
