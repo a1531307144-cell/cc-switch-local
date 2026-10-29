@@ -7,8 +7,9 @@ import * as codex from './codex'
 import { testProvider } from './test'
 import { importFromCcSwitch } from './importer'
 import { PRESETS } from './presets'
-import { initUpdater } from './updater'
+import { registerUpdateIpc, startupCheck } from './updater'
 import { runSelfTest } from './selftest'
+import { RELEASES_URL } from '../shared/constants'
 import type { AppSettings, Provider, ProviderInput, TestInput, ToolId } from '../shared/types'
 
 const SELFTEST = process.argv.includes('--selftest')
@@ -213,20 +214,15 @@ function registerIpc(): void {
 
   ipcMain.handle('app:version', () => app.getVersion())
 
-  ipcMain.handle('update:check', async () => {
-    if (!app.isPackaged) return { error: '开发模式不支持检查更新' }
-    try {
-      const { autoUpdater } = await import('electron-updater')
-      autoUpdater.autoDownload = false
-      const result = await autoUpdater.checkForUpdates()
-      return { version: result?.updateInfo?.version ?? null }
-    } catch (e) {
-      return { error: `检查更新失败：${(e as Error).message}` }
-    }
-  })
+  ipcMain.handle('app:openReleases', () => shell.openExternal(RELEASES_URL))
+
+  registerUpdateIpc()
 }
 
-if (!app.requestSingleInstanceLock()) {
+// 自测是隔离的无头运行，不参与单实例锁——否则用户开着应用时自测会静默退出（2026-10-29 实测）
+const gotLock = SELFTEST || app.requestSingleInstanceLock()
+
+if (!gotLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
@@ -244,8 +240,8 @@ if (!app.requestSingleInstanceLock()) {
     }
     const store = loadStore()
     applySettings(store.settings)
-    initUpdater(() => loadStore().settings.autoUpdate)
     createWindow(store.settings.theme)
+    void startupCheck(store.settings.autoUpdate)
     nativeTheme.on('updated', () => {
       if (loadStore().settings.theme === 'system') syncTitleBar('system')
     })

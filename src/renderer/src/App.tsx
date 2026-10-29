@@ -24,6 +24,10 @@ export default function App() {
   const [toast, setToast] = useState<{ text: string; kind: 'ok' | 'err' } | null>(null)
   const [busyTool, setBusyTool] = useState<ToolId | null>(null)
   const [importing, setImporting] = useState(false)
+  const [updateState, setUpdateState] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded'>('idle')
+  const [updateVersion, setUpdateVersion] = useState('')
+  const [updatePercent, setUpdatePercent] = useState(0)
+  const [updateError, setUpdateError] = useState('')
 
   const toastTimer = useRef<number | undefined>(undefined)
   const notify = useCallback((text: string, kind: 'ok' | 'err' = 'ok') => {
@@ -45,6 +49,54 @@ export default function App() {
   useEffect(() => {
     refresh().catch(() => notify('初始化失败', 'err'))
   }, [refresh, notify])
+
+  // 更新事件（启动静默检查发现新版 / 下载进度 / 下载完成）
+  useEffect(() => {
+    const un1 = window.api.onUpdateAvailable((p) => {
+      setUpdateVersion(p.version)
+      setUpdateError('')
+      setUpdateState('available')
+    })
+    const un2 = window.api.onUpdateProgress((p) => setUpdatePercent(p.percent))
+    const un3 = window.api.onUpdateDownloaded(() => setUpdateState('downloaded'))
+    return () => {
+      un1()
+      un2()
+      un3()
+    }
+  }, [])
+
+  const runCheck = useCallback(async () => {
+    setUpdateState('checking')
+    const r = await window.api.updateCheck()
+    if (r.error) {
+      setUpdateError(r.error)
+      setUpdateState('idle')
+      notify(r.error, 'err')
+      return
+    }
+    if (r.version && r.version !== r.current) {
+      setUpdateVersion(r.version)
+      setUpdateError('')
+      setUpdateState('available')
+      notify(`发现新版本 v${r.version}`)
+    } else {
+      setUpdateState('idle')
+      notify('已是最新版本')
+    }
+  }, [notify])
+
+  const startDownload = useCallback(async () => {
+    setUpdateState('downloading')
+    setUpdatePercent(0)
+    setUpdateError('')
+    const r = await window.api.updateDownload()
+    if (r.error) {
+      setUpdateError(r.error)
+      setUpdateState('available')
+      notify(r.error, 'err')
+    }
+  }, [])
 
   const theme = store?.settings.theme
   useEffect(() => {
@@ -189,6 +241,48 @@ export default function App() {
       </aside>
 
       <main className="main">
+        {updateState === 'available' && (
+          <div className="update-banner">
+            <span>发现新版本 v{updateVersion}</span>
+            <div className="btn-row">
+              <button className="btn primary sm" onClick={startDownload}>
+                立即下载
+              </button>
+              <button className="btn ghost sm" onClick={() => setUpdateState('idle')}>
+                稍后
+              </button>
+            </div>
+          </div>
+        )}
+        {updateState === 'downloading' && (
+          <div className="update-banner">
+            <span>正在下载更新… {updatePercent}%</span>
+            <div className="update-bar">
+              <div className="update-bar-fill" style={{ width: `${updatePercent}%` }} />
+            </div>
+          </div>
+        )}
+        {updateState === 'downloaded' && (
+          <div className="update-banner">
+            <span>更新已就绪，点击后重启并自动安装</span>
+            <button className="btn primary sm" onClick={() => void window.api.updateInstall()}>
+              重启并安装
+            </button>
+          </div>
+        )}
+        {updateError && (
+          <div className="update-banner err">
+            <span>{updateError}</span>
+            <div className="btn-row">
+              <button className="btn sm" onClick={() => void window.api.openReleases()}>
+                打开发布页
+              </button>
+              <button className="btn ghost sm" onClick={() => setUpdateError('')}>
+                关闭
+              </button>
+            </div>
+          </div>
+        )}
         {toolView && (
           <>
             <div className="toolbar">
@@ -276,7 +370,9 @@ export default function App() {
             </div>
           </>
         )}
-        {view === 'settings' && <SettingsPanel store={store} onChanged={refresh} notify={notify} />}
+        {view === 'settings' && (
+          <SettingsPanel store={store} onChanged={refresh} notify={notify} onCheckUpdate={runCheck} updateChecking={updateState === 'checking'} />
+        )}
       </main>
 
       {draft && <ProviderForm draft={draft} onClose={() => setDraft(null)} onSave={save} />}

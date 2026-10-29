@@ -10,15 +10,18 @@ function fmtDate(ms: number): string {
 export default function SettingsPanel({
   store,
   onChanged,
-  notify
+  notify,
+  onCheckUpdate,
+  updateChecking
 }: {
   store: StoreShape
   onChanged: () => Promise<void>
   notify: (text: string, kind?: 'ok' | 'err') => void
+  onCheckUpdate: () => Promise<void>
+  updateChecking: boolean
 }) {
   const [backups, setBackups] = useState<Record<ToolId, BackupInfo[]>>({ claude: [], codex: [] })
   const [version, setVersion] = useState('')
-  const [checking, setChecking] = useState(false)
 
   const loadBackups = async () => {
     setBackups({
@@ -38,18 +41,6 @@ export default function SettingsPanel({
   const updateSetting = async (patch: Partial<AppSettings>) => {
     await window.api.settingsUpdate(patch)
     await onChanged()
-  }
-
-  const checkUpdate = async () => {
-    setChecking(true)
-    try {
-      const r = await window.api.updateCheck()
-      if (r.error) notify(r.error, 'err')
-      else if (r.version && r.version !== version) notify(`发现新版本 v${r.version}，请到 GitHub Releases 下载`)
-      else notify('已是最新版本')
-    } finally {
-      setChecking(false)
-    }
   }
 
   const restore = async (tool: ToolId, file: string) => {
@@ -91,11 +82,14 @@ export default function SettingsPanel({
           开机自启
         </label>
         <div className="field-row">
-          <button className="btn sm" onClick={checkUpdate} disabled={checking || !version}>
-            {checking ? '检查中…' : '检查更新'}
+          <button className="btn sm" onClick={onCheckUpdate} disabled={updateChecking}>
+            {updateChecking ? '检查中…' : '检查更新'}
           </button>
           <span className="muted">当前版本 v{version || '…'}</span>
         </div>
+        <p className="muted small">
+          发现新版本时页面顶部会出现下载横幅，下载完成后一键重启安装；网络不畅时会提供发布页链接手动下载。
+        </p>
       </section>
 
       <section className="card">

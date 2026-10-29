@@ -192,6 +192,8 @@ approval_policy = "on-request"
 - **零遥测、零日志**：全库无 console 输出；`dependencies` 仅 3 个（@iarna/toml、electron-updater、misans），无任何分析/上报组件。
 - **开发/用户环境结构性隔离**：`store.ts dataDir()` 在未打包模式自动使用 `userData + "-dev"`，`npm run dev` **永远碰不到**已安装应用的数据；测试性启动（跑打包产物做验证）**必须**设置 `CCS_DATA_DIR` + `CCS_HOME_OVERRIDE` 指向临时目录。
 - **cc-switch 导入去重**（v0.3.1）：导入前与现有库按 `baseUrl|apiKey` 去重，重复点击不会堆积（此前用户真实数据出现同一批 10 条被导入 8 遍——用户数据文件未动，待用户自行决定是否清理）。
+- **更新链路完整化**（v0.5.0）：检查（手动+启动静默）→ 应用内下载（进度事件推给渲染层横幅）→ `quitAndInstall` 一键安装；`autoDownload` 始终 false，下载必须用户触发。GitHub 不可达时报错并提供建议 + 「打开发布页」兜底（Releases 地址在 `src/shared/constants.ts`，属主账号已登记门禁白名单）。
+- **卸载即清空数据**（v0.5.0，用户要求）：electron-builder `nsis.deleteAppDataOnUninstall: true`——卸载删除 `%APPDATA%/cc-switch-local`（含全部 Key）。**升级安装不受影响**。README 有显著警示。
 - **公开仓库零隐私**：门禁（pre-commit）+ 全量 HEAD 扫描双重保障；跟踪文件中的 sk- 长串仅存在于 selftest.ts（合成数据）。
 
 ## 11. 给接手 agent 的硬性规则（与用户全局 AGENTS.md 一致）

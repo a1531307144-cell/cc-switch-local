@@ -18,6 +18,8 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   shortcutName: CC Switch Local
+  # 用户要求：卸载时清空全部数据（含 API Key）。升级安装不受影响。
+  deleteAppDataOnUninstall: true
 publish:
   provider: github
   releaseType: release

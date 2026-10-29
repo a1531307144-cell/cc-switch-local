@@ -117,5 +117,11 @@ export interface Api {
   settingsUpdate(patch: Partial<AppSettings>): Promise<AppSettings>
   openPath(kind: 'data' | 'claudeConfig' | 'codexConfig'): Promise<void>
   appVersion(): Promise<string>
-  updateCheck(): Promise<{ version?: string | null; error?: string }>
+  updateCheck(): Promise<{ version?: string | null; current?: string; error?: string }>
+  updateDownload(): Promise<{ ok?: boolean; error?: string }>
+  updateInstall(): Promise<{ ok?: boolean; error?: string }>
+  onUpdateAvailable(cb: (p: { version: string }) => void): () => void
+  onUpdateProgress(cb: (p: { percent: number }) => void): () => void
+  onUpdateDownloaded(cb: () => void): () => void
+  openReleases(): Promise<void>
 }

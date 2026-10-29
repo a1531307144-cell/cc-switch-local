@@ -65,8 +65,8 @@ try {
 } catch {
   /* gh 不可用/离线时跳过账号检查 */
 }
-// GitHub 账号作为公开仓库属主身份，只允许出现在这两处
-const LOGIN_OK_FILES = new Set(['package.json', 'HANDOVER.md'])
+// GitHub 账号作为公开仓库属主身份，只允许出现在这几处（package.json repository / HANDOVER 仓库地址 / 应用常量里的 Releases 链接）
+const LOGIN_OK_FILES = new Set(['package.json', 'HANDOVER.md', 'src/shared/constants.ts'])
 // selftest 里的 Key 是合成测试数据
 const KEY_OK_FILES = new Set(['src/main/selftest.ts'])
 
@@ -87,13 +87,18 @@ for (const file of staged) {
   } catch {
     continue
   }
+  // 完整账号形态（公开仓库属主身份）先剔除，剩余部分再查用户名子串——
+  // 否则账号所在文件会被用户名扫描层永久误报（2026-10-29 constants.ts 实测）
+  if (ghLogin && LOGIN_OK_FILES.has(file)) {
+    diff = diff.split(ghLogin).join('[GH-LOGIN]')
+  }
   const lower = diff.toLowerCase()
 
   if (username && lower.includes(username)) {
     problems.push(`[用户名] ${file}：包含本机 Windows 用户名 "${username}"`)
   }
   if (ghLogin && lower.includes(ghLogin) && !LOGIN_OK_FILES.has(file)) {
-    problems.push(`[GitHub 账号] ${file}：包含账号（仅允许 package.json / HANDOVER.md）`)
+    problems.push(`[GitHub 账号] ${file}：包含账号（仅允许 package.json / HANDOVER.md / constants.ts）`)
   }
   for (const [re, label] of PATTERNS) {
     if (new RegExp(re.source, 'i').test(diff)) {

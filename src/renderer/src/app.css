@@ -374,6 +374,44 @@ code {
   color: var(--muted);
 }
 
+/* ---------- 更新横幅 ---------- */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  border-radius: var(--r-l);
+  corner-shape: squircle;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent-ink);
+}
+
+.update-banner.err {
+  background: var(--err-soft);
+  border-color: color-mix(in srgb, var(--err) 50%, transparent);
+  color: var(--err-ink);
+}
+
+.update-bar {
+  flex: 1;
+  min-width: 160px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--chip);
+  overflow: hidden;
+}
+
+.update-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--r-full);
+  transition: width 0.3s ease;
+}
+
 /* ---------- 徽标 ---------- */
 .badge {
   font-size: 11px;

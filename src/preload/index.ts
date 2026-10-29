@@ -16,7 +16,25 @@ const api: Api = {
   settingsUpdate: (patch: Partial<AppSettings>) => ipcRenderer.invoke('settings:update', patch),
   openPath: (kind: 'data' | 'claudeConfig' | 'codexConfig') => ipcRenderer.invoke('app:openPath', kind),
   appVersion: () => ipcRenderer.invoke('app:version'),
-  updateCheck: () => ipcRenderer.invoke('update:check')
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateDownload: () => ipcRenderer.invoke('update:download'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+  onUpdateAvailable: (cb: (p: { version: string }) => void) => {
+    const l = (_e: unknown, p: { version: string }) => cb(p)
+    ipcRenderer.on('update:available', l)
+    return () => ipcRenderer.removeListener('update:available', l as never)
+  },
+  onUpdateProgress: (cb: (p: { percent: number }) => void) => {
+    const l = (_e: unknown, p: { percent: number }) => cb(p)
+    ipcRenderer.on('update:progress', l)
+    return () => ipcRenderer.removeListener('update:progress', l as never)
+  },
+  onUpdateDownloaded: (cb: () => void) => {
+    const l = () => cb()
+    ipcRenderer.on('update:downloaded', l)
+    return () => ipcRenderer.removeListener('update:downloaded', l)
+  },
+  openReleases: () => ipcRenderer.invoke('app:openReleases')
 }
 
 contextBridge.exposeInMainWorld('api', api)
