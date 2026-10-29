@@ -159,6 +159,9 @@ approval_policy = "on-request"
 8. **一次写盘失败会毒化串行写队列**：saveStore 曾用 `chain = chain.then(...)` 链式写法，失败后所有保存静默失效——已修复（失败与队列解耦）。新增 IPC 入口时**必须在主进程侧校验入参**（参考 `validateProviderInput`），渲染层校验只是 UX 不是安全边界。
 9. **preload 沙箱**：`sandbox: true` 与 electron-vite 打包的 preload（只 require electron）兼容，已实机验证通过；不要为省事改回 `false`。窗口的 `setWindowOpenHandler` / `will-navigate` / `setPermissionRequestHandler` 三道加固同理，别拆。
 10. **CDP 触发页面刷新用 `Page.reload` 命令**，不要用 `Runtime.evaluate('location.reload()')`——后者可能被静默吞掉（表现为"改了设置但截图没变"，2026-10-29 实测）。另外 `await` 一个 reload 的 evaluate 会因上下文销毁永久挂死；测试脚本里所有 CDP send 都要带超时。
+11. **electron-updater 动态导入的 ESM-CJS 互操作**（v0.5.0 用户实测踩坑）：`const { autoUpdater } = await import('electron-updater')` 在某些 Node/打包形态下命名导出探测失败 → autoUpdater 为 undefined。必须兼容两种形态：`mod.autoUpdater ?? mod.default?.autoUpdater`，加载失败时报出 `Object.keys(mod)` 便于定位（修复见 `updater.ts getAutoUpdater`）。
+12. **自测不参与单实例锁**：`--selftest` 模式跳过 `requestSingleInstanceLock`（用户开着已安装应用时，自测曾被锁静默退出——exit 0 但什么都没跑）。同理：**杀测试实例必须按命令行路径精确匹配**（PowerShell 过滤 `CommandLine -like '*win-unpacked*'`），全局 taskkill 会误杀用户正在运行的应用。
+13. **本地模拟更新服务器验证更新链路**（发布新版本前的推荐验证法）：构建新版安装包 → 把 `latest.yml` + 连字符命名的安装包/blockmap 放进一个静态目录（**注意 latest.yml 里的文件名是连字符形态，本地构建产物是空格形态，文件名必须对齐**）→ `node http` 起静态服务 → 把测试用 win-unpacked 的 `resources/app-update.yml` 改为 `provider: generic; url: http://localhost:<port>` → CDP 自动点击 检查→下载→安装 → 注册表确认版本真实升级。模拟器脚本模式参考会话历史（update-server.mjs + e2e-update.mjs）。
 
 ## 9. 路线图（用户已认可的优先级）
 
