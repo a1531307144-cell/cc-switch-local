@@ -3,6 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import { atomicWrite } from './store'
+import { routerPort } from './router'
 import type { BackupInfo, Provider, SwitchResult, ToolStatus } from '../shared/types'
 
 const MAX_BACKUPS = 10
@@ -70,20 +71,29 @@ async function pruneBackups(): Promise<void> {
   }
 }
 
-/** provider 为 null 表示「恢复官方登录」：清掉本工具接管的 env 键 */
-export async function switchClaude(provider: Provider | null): Promise<SwitchResult> {
+/**
+ * provider 为 null 表示「恢复官方登录」：清掉本工具接管的 env 键。
+ * viaRouter=true 时配置指向本机路由（真实 Key 不落盘到工具配置，只留占位符）。
+ */
+export async function switchClaude(provider: Provider | null, viaRouter = false): Promise<SwitchResult> {
   if (provider) assertValidProvider(provider)
   const data = await readSettings()
   const backup = await backupSettings()
   const env = { ...((data.env as Record<string, unknown>) ?? {}) }
   if (provider) {
-    env.ANTHROPIC_BASE_URL = provider.baseUrl
-    if (provider.keyType === 'api_key') {
-      env.ANTHROPIC_API_KEY = provider.apiKey
-      delete env.ANTHROPIC_AUTH_TOKEN
-    } else {
-      env.ANTHROPIC_AUTH_TOKEN = provider.apiKey
+    if (viaRouter) {
+      env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${routerPort()}/claude`
+      env.ANTHROPIC_AUTH_TOKEN = 'ccsl-local-router'
       delete env.ANTHROPIC_API_KEY
+    } else {
+      env.ANTHROPIC_BASE_URL = provider.baseUrl
+      if (provider.keyType === 'api_key') {
+        env.ANTHROPIC_API_KEY = provider.apiKey
+        delete env.ANTHROPIC_AUTH_TOKEN
+      } else {
+        env.ANTHROPIC_AUTH_TOKEN = provider.apiKey
+        delete env.ANTHROPIC_API_KEY
+      }
     }
   } else {
     delete env.ANTHROPIC_BASE_URL
@@ -158,8 +168,10 @@ export async function restoreBackup(file: string): Promise<SwitchResult> {
     throw new Error('非法的备份文件名')
   }
   const src = path.join(claudeDir(), file)
-  if (!fs.existsSync(src)) throw new Error('备份文件不存在')
+  // 先把源内容读进内存：恢复前的新备份会触发 prune（保留最近 10 份），
+  // 源文件恰好是最旧一份时会先被删掉（2026-10-30 自测抓到）
+  const content = await fsp.readFile(src)
   const backup = await backupSettings()
-  await fsp.copyFile(src, claudeSettingsPath())
+  await fsp.writeFile(claudeSettingsPath(), content)
   return { ok: true, files: [claudeSettingsPath()], backup: backup ?? undefined }
 }

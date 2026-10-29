@@ -19,6 +19,14 @@ export function emptyDraft(tool: ToolId): FormDraft {
   return { tool, name: '', baseUrl: '', apiKey: '', keyType: 'auth_token', model: '', wireApi: 'responses', notes: '' }
 }
 
+function safeHost(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return url
+  }
+}
+
 export default function ProviderForm({
   draft,
   onClose,
@@ -30,6 +38,8 @@ export default function ProviderForm({
 }) {
   const [form, setForm] = useState<FormDraft>(draft)
   const [presets, setPresets] = useState<Preset[]>([])
+  const [presetQuery, setPresetQuery] = useState('')
+  const [presetOpen, setPresetOpen] = useState(false)
   const [showKey, setShowKey] = useState(false)
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
@@ -43,11 +53,21 @@ export default function ProviderForm({
 
   const set = (patch: Partial<FormDraft>) => setForm((f) => ({ ...f, ...patch }))
 
-  const applyPreset = (name: string) => {
-    const p = presets.find((x) => x.name === name)
-    if (!p) return
-    set({ name: p.name, baseUrl: p.baseUrl, model: p.model ?? '', notes: p.notes ?? form.notes })
+  const applyPreset = (p: Preset) => {
+    set({
+      name: p.name,
+      baseUrl: p.baseUrl,
+      model: p.model ?? '',
+      keyType: p.keyType ?? form.keyType,
+      wireApi: p.wireApi ?? form.wireApi,
+      notes: p.notes ?? form.notes
+    })
   }
+
+  const q = presetQuery.trim().toLowerCase()
+  const presetMatches = presets
+    .filter((p) => !q || (p.searchKey ?? '').includes(q))
+    .slice(0, 8)
 
   const submit = async () => {
     if (!form.name.trim()) return setErr('请填写名称')
@@ -67,15 +87,43 @@ export default function ProviderForm({
     <Modal title={form.id ? '编辑供应商' : '新建供应商'} onClose={onClose}>
       <div className="form">
         <label>
-          从预设填入（可选）
-          <select value="" onChange={(e) => applyPreset(e.target.value)}>
-            <option value="">— 选择预设 —</option>
-            {presets.map((p) => (
-              <option key={p.name} value={p.name}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          从预设填入（{presets.length} 条，按名称或域名搜索）
+          <div
+            className="preset-picker"
+            onBlur={() => {
+              window.setTimeout(() => setPresetOpen(false), 120)
+            }}
+          >
+            <input
+              value={presetQuery}
+              onChange={(e) => {
+                setPresetQuery(e.target.value)
+                setPresetOpen(true)
+              }}
+              onFocus={() => setPresetOpen(true)}
+              placeholder="例如：packy、智谱、88api、deepseek…"
+            />
+            {presetOpen && presetMatches.length > 0 && (
+              <div className="preset-list">
+                {presetMatches.map((p) => (
+                  <button
+                    type="button"
+                    key={`${p.tool}|${p.baseUrl}|${p.name}`}
+                    className="preset-item"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      applyPreset(p)
+                      setPresetOpen(false)
+                      setPresetQuery('')
+                    }}
+                  >
+                    <span>{p.name}</span>
+                    <span className="preset-domain">{safeHost(p.baseUrl)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <small>预设仅供参考，端点与模型以各服务商官方文档为准</small>
         </label>
 

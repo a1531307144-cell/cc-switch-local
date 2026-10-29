@@ -13,6 +13,11 @@ const api: Api = {
   providerTest: (input: TestInput) => ipcRenderer.invoke('provider:test', input),
   ccswitchImport: () => ipcRenderer.invoke('ccswitch:import'),
   presetsGet: () => ipcRenderer.invoke('presets:get'),
+  backupExport: (passphrase: string) => ipcRenderer.invoke('backup:export', passphrase),
+  backupImport: (passphrase: string) => ipcRenderer.invoke('backup:import', passphrase),
+  usageGet: () => ipcRenderer.invoke('usage:get'),
+  routerStatus: () => ipcRenderer.invoke('router:status'),
+  routerSet: (tool: ToolId, enabled: boolean) => ipcRenderer.invoke('router:set', tool, enabled),
   settingsUpdate: (patch: Partial<AppSettings>) => ipcRenderer.invoke('settings:update', patch),
   openPath: (kind: 'data' | 'claudeConfig' | 'codexConfig') => ipcRenderer.invoke('app:openPath', kind),
   appVersion: () => ipcRenderer.invoke('app:version'),
@@ -34,6 +39,11 @@ const api: Api = {
     const l = () => cb()
     ipcRenderer.on('update:downloaded', l)
     return () => ipcRenderer.removeListener('update:downloaded', l)
+  },
+  onStoreChanged: (cb: () => void) => {
+    const l = () => cb()
+    ipcRenderer.on('store:changed', l)
+    return () => ipcRenderer.removeListener('store:changed', l)
   },
   openReleases: () => ipcRenderer.invoke('app:openReleases')
 }

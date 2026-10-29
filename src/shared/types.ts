@@ -35,6 +35,16 @@ export interface AppSettings {
   autoUpdate: boolean
   autoStart: boolean
   theme: ThemeMode
+  /** 本机路由模式（每工具独立开关；port 缺省 15721；缺省 false） */
+  router?: { claude: boolean; codex: boolean; port?: number }
+}
+
+export interface RouterStatus {
+  running: boolean
+  port: number
+  error?: string
+  claude: { enabled: boolean; requests: number; errors: number }
+  codex: { enabled: boolean; requests: number; errors: number }
 }
 
 export interface StoreShape {
@@ -76,7 +86,13 @@ export interface Preset {
   name: string
   baseUrl: string
   model?: string
+  /** claude 预设：应使用的 env 键类型（缺省 auth_token） */
+  keyType?: KeyType
+  /** codex 预设：wire_api（缺省 responses） */
+  wireApi?: 'responses' | 'chat'
   notes?: string
+  /** 搜索键：名称 + 域名小写，渲染层过滤用 */
+  searchKey?: string
 }
 
 export interface ProviderDraft {
@@ -102,6 +118,39 @@ export interface TestInput {
   model?: string
 }
 
+// ─── 用量统计（扫描各工具本地会话日志的聚合结果） ───
+
+export interface UsageEntry {
+  ts: number
+  tool: ToolId
+  model: string
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  cost: number
+}
+
+export interface UsageDay {
+  date: string
+  requests: number
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  cost: number
+}
+
+export interface UsageStats {
+  totals: { requests: number; input: number; output: number; cacheRead: number; cacheWrite: number; cost: number }
+  days: UsageDay[]
+  models: { model: string; tool: ToolId; requests: number; input: number; output: number; cost: number }[]
+  recent: UsageEntry[]
+  scannedFiles: number
+  scanMs: number
+  lastScanAt: number
+}
+
 export interface Api {
   storeGet(): Promise<StoreShape>
   providerSave(input: ProviderInput): Promise<Provider>
@@ -114,6 +163,11 @@ export interface Api {
   providerTest(input: TestInput): Promise<TestResult>
   ccswitchImport(): Promise<ImportReport>
   presetsGet(): Promise<Preset[]>
+  backupExport(passphrase: string): Promise<{ savedTo?: string; canceled?: boolean }>
+  backupImport(passphrase: string): Promise<{ added: number; skipped: number; canceled?: boolean }>
+  usageGet(): Promise<UsageStats>
+  routerStatus(): Promise<RouterStatus>
+  routerSet(tool: ToolId, enabled: boolean): Promise<RouterStatus>
   settingsUpdate(patch: Partial<AppSettings>): Promise<AppSettings>
   openPath(kind: 'data' | 'claudeConfig' | 'codexConfig'): Promise<void>
   appVersion(): Promise<string>
@@ -124,5 +178,7 @@ export interface Api {
   onUpdateAvailable(cb: (p: { version: string }) => void): () => void
   onUpdateProgress(cb: (p: { percent: number; transferred?: number; total?: number; bytesPerSecond?: number }) => void): () => void
   onUpdateDownloaded(cb: () => void): () => void
+  /** 托盘等主进程侧变更了供应商库时推送，渲染层据此刷新 */
+  onStoreChanged(cb: () => void): () => void
   openReleases(): Promise<void>
 }

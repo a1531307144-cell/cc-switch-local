@@ -10,14 +10,18 @@
 ## 功能
 
 - **供应商管理**：新增 / 编辑 / 删除 API 供应商（名称、Base URL、API Key、Key 类型、模型、备注）
-- **一键切换**：写 `~/.claude/settings.json`（Claude Code）或 `~/.codex/config.toml` + `auth.json`（Codex），**只改 API 相关的键，其余配置原样保留**
-- **自动备份**：每次写入前自动备份，保留最近 10 份，可在「设置」里一键恢复
+- **一键切换**：写 `~/.claude/settings.json`（Claude Code）或 `~/.codex/config.toml` + `auth.json`（Codex），**只改 API 相关的键，其余配置原样保留**（含注释、键顺序与自定义段）
+- **250+ 内置预设**：按名称或域名搜索填入，覆盖官方端点与主流中转站（数据改编自 [farion1231/cc-switch](https://github.com/farion1231/cc-switch)，MIT）
+- **用量统计**：自动扫描本机会话日志，按天 / 模型统计请求数、Token、缓存命中率与估算花费，全年热力图 + 30 天趋势 + 逐条请求日志，**不需要开路由也能统计**
+- **本机路由**（最简版）：开启后请求经 `127.0.0.1` 代理转发——路由模式下切换供应商即时生效，上游故障（5xx / 429 / 连接失败）时按列表顺序自动故障转移；客户端配置里只落占位 Key，真实 Key 只在本机
+- **系统托盘**：关窗驻留托盘，菜单里一键切换供应商 / 恢复官方配置
+- **加密备份**：把供应商库导出为 AES-256-GCM 加密文件（.ccslbak），跨设备迁移时 Key 不经过任何云端，手动拷文件即可
+- **自动备份**：每次写配置前自动备份，保留最近 10 份，可在「设置」里一键恢复
 - **恢复官方配置**：一键清除本工具写入的代理键，回到官方登录状态
 - **厂商识别与图标**：内置 DeepSeek / Anthropic / Moonshot Kimi / Qwen / OpenRouter / Ollama 等厂商图标与官方名称，按端点自动识别、可视化选用；识别不出的中转站显示中性样式。图标在构建时打包进应用，**运行时不联网请求任何图标**
 - **连接测试**：向供应商发一个最小请求，验证可达性与鉴权（注意会产生极少量 token 消耗）
 - **导入当前配置**：把已存在于工具配置里的 API 设置一键带入管理
 - **从 cc-switch 迁移**：自动从原版 cc-switch 的旧版 `config.json` 或新版数据库里挖出供应商列表
-- **内置预设**：收录官方公开文档中提供 Anthropic 兼容端点的服务商（DeepSeek / Kimi / GLM / Qwen 等），仅供参考
 - **暗色主题 / 开机自启 / 启动时检查更新**（仅提示，不静默安装）
 
 ## 下载安装
@@ -46,7 +50,7 @@
 
 切换到某供应商时写入对应的键并**清除另一个**（避免残留配置互相干扰）；`env` 里的其它键和文件其余部分**一律不动**。每次写入前先备份到同目录 `settings.json.bak-时间戳`。
 
-对 Codex，写入 `~/.codex/config.toml`（`model_provider` 指向 `ccsl` 自定义段，`wire_api` 默认 `responses`）与 `~/.codex/auth.json` 的 `OPENAI_API_KEY`。注意 TOML 重写会丢失注释（写入前有自动备份）。
+对 Codex，写入 `~/.codex/config.toml`（`model_provider` 指向 `ccsl` 自定义段，`wire_api` 默认 `responses`）与 `~/.codex/auth.json` 的 `OPENAI_API_KEY`。TOML 采用**行级手术式编辑**：只替换 / 追加本工具拥有的键，你的注释、键顺序和 `[profile.*]` 等自定义段原样保留；每次写入前用完整 TOML 解析校验结果，解析失败立即中止绝不落盘，并有自动备份兜底。
 
 **数据存放**：供应商列表（含明文 Key）保存在本机应用数据目录的 `providers.json`（设置页可一键打开）。明文存储与原版 cc-switch 一致，换来的是零依赖、可人工检查、换机器直接拷文件。请勿把该目录分享给他人。
 
@@ -88,11 +92,12 @@ GitHub Actions（`.github/workflows/release.yml`）会在 Windows 环境构建�
 ## 路线图
 
 - [ ] 主密码加密存储 API Key
-- [ ] 托盘常驻与快捷切换
-- [ ] 用量统计（扫描本地会话日志）
-- [ ] 本地路由 / 多供应商故障转移（原版 cc-switch 的聚合模式）
+- [x] ~~托盘常驻与快捷切换~~（v0.6.0）
+- [x] ~~用量统计（扫描本地会话日志）~~（v0.6.0）
+- [ ] 本地路由协议转换（Claude Code 直接使用 OpenAI 格式供应商等，v0.6.0 已交付透传 + 故障转移）
+- [ ] 聚合模式（多家供应商的模型进同一个模型选择器）
 - [ ] 更多工具：Gemini CLI、OpenCode 等
-- [ ] MCP 服务器管理
+- [ ] MCP 服务器管理 / Skills / 提示词管理
 - [ ] 多语言
 
 ## License
@@ -100,6 +105,11 @@ GitHub Actions（`.github/workflows/release.yml`）会在 Windows 环境构建�
 [MIT](./LICENSE)
 
 厂商图标来自 [simple-icons](https://simpleicons.org)（CC0 协议），相关品牌商标归各厂商所有，仅用于端点识别用途。
+
+## 致谢
+
+- [farion1231/cc-switch](https://github.com/farion1231/cc-switch)（MIT）——本项目的灵感来源与迁移对象；内置预设数据改编自其公开预设（仅收录端点 URL 等公开信息）。
+- [simple-icons](https://simpleicons.org)——厂商图标。
 
 ## 免责声明
 

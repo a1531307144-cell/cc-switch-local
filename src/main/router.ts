@@ -1,0 +1,211 @@
+import http from 'node:http'
+import { Readable } from 'node:stream'
+import { loadStore } from './store'
+import type { Provider, RouterStatus, ToolId } from '../shared/types'
+
+/**
+ * 本地路由（最简版）：127.0.0.1 上的转发代理，带按供应商列表顺序的故障转移。
+ * - /claude/* → 当前 Claude 供应商（Anthropic 兼容端点透传）
+ * - /codex/*  → 当前 Codex 供应商（OpenAI 兼容端点透传）
+ * 上游失败（连接错误 / 5xx / 429）时按列表顺序换下一家，最多试 4 家。
+ * 客户端只拿占位 Key，真实 Key 只存在本机 store 与路由进程内存里。
+ * 协议转换（Claude↔OpenAI）不在本版本范围，留待 v0.7。
+ */
+
+const DEFAULT_PORT = 15721
+const MAX_ATTEMPTS = 4
+const MAX_BODY = 64 * 1024 * 1024
+const UPSTREAM_TIMEOUT_MS = 600_000
+
+let server: http.Server | null = null
+let lastError = ''
+const stats: Record<ToolId, { requests: number; errors: number }> = {
+  claude: { requests: 0, errors: 0 },
+  codex: { requests: 0, errors: 0 }
+}
+
+export function routerPort(): number {
+  const env = Number(process.env.CCS_ROUTER_PORT)
+  if (Number.isInteger(env) && env > 0 && env < 65536) return env
+  const s = loadStore().settings.router?.port
+  return typeof s === 'number' && Number.isInteger(s) && s > 0 && s < 65536 ? s : DEFAULT_PORT
+}
+
+export function routerEnabled(tool: ToolId): boolean {
+  return loadStore().settings.router?.[tool] === true
+}
+
+export async function startRouter(): Promise<void> {
+  if (server) return
+  await new Promise<void>((resolve, reject) => {
+    const s = http.createServer((req, res) => {
+      handle(req, res).catch(() => {
+        if (!res.headersSent) {
+          res.writeHead(502, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ error: { message: '路由内部错误' } }))
+        } else {
+          res.destroy()
+        }
+      })
+    })
+    s.on('error', (e) => {
+      server = null
+      lastError = (e as Error).message
+      reject(e)
+    })
+    s.listen(routerPort(), '127.0.0.1', () => {
+      server = s
+      lastError = ''
+      resolve()
+    })
+  })
+}
+
+export function stopRouter(): void {
+  server?.close()
+  server = null
+}
+
+export function routerStatus(): RouterStatus {
+  return {
+    running: !!server,
+    port: routerPort(),
+    ...(lastError ? { error: lastError } : {}),
+    claude: { enabled: routerEnabled('claude'), ...stats.claude },
+    codex: { enabled: routerEnabled('codex'), ...stats.codex }
+  }
+}
+
+function jsonError(res: http.ServerResponse, status: number, message: string): void {
+  res.writeHead(status, { 'content-type': 'application/json' })
+  res.end(JSON.stringify({ error: { type: 'ccsl_router', message } }))
+}
+
+/** 从 URL 解析出工具与前缀后的子路径（含查询串） */
+function parseRoute(url: string): { tool: ToolId; rest: string } | null {
+  if (url === '/claude' || url.startsWith('/claude/')) return { tool: 'claude', rest: url.slice('/claude'.length) || '/' }
+  if (url === '/codex' || url.startsWith('/codex/')) return { tool: 'codex', rest: url.slice('/codex'.length) || '/' }
+  return null
+}
+
+function readBody(req: http.IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    req.on('data', (c: Buffer) => {
+      size += c.length
+      if (size > MAX_BODY) {
+        reject(new Error('请求体过大'))
+        req.destroy()
+        return
+      }
+      chunks.push(c)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
+
+const HOP_HEADERS = new Set(['host', 'content-length', 'connection', 'keep-alive', 'transfer-encoding', 'upgrade'])
+
+function buildUpstreamHeaders(tool: ToolId, provider: Provider, req: http.IncomingMessage): Record<string, string> {
+  const headers: Record<string, string> = {}
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (HOP_HEADERS.has(k) || k === 'authorization' || k === 'x-api-key') continue
+    if (typeof v === 'string') headers[k] = v
+  }
+  // 客户端拿到的只是占位 Key；真实 Key 在这里注入
+  if (tool === 'claude') {
+    if (provider.keyType === 'api_key') headers['x-api-key'] = provider.apiKey
+    else headers['authorization'] = `Bearer ${provider.apiKey}`
+  } else {
+    headers['authorization'] = `Bearer ${provider.apiKey}`
+  }
+  return headers
+}
+
+async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  const route = parseRoute(req.url ?? '')
+  if (!route) {
+    jsonError(res, 404, '未知路径（支持 /claude/* 与 /codex/*）')
+    return
+  }
+  const { tool, rest } = route
+  const store = loadStore()
+  const current = store.current[tool] ? store.providers.find((p) => p.id === store.current[tool]) ?? null : null
+  const chain: Provider[] = [
+    ...(current ? [current] : []),
+    ...store.providers.filter((p) => p.tool === tool && p.id !== current?.id)
+  ].slice(0, MAX_ATTEMPTS)
+
+  if (chain.length === 0) {
+    stats[tool].errors++
+    jsonError(res, 502, `本机路由没有可用的 ${tool} 供应商：请先在应用内添加并选择供应商`)
+    return
+  }
+
+  const body = await readBody(req).catch(() => null)
+  if (body === null) {
+    stats[tool].errors++
+    jsonError(res, 413, '请求体过大或读取失败')
+    return
+  }
+
+  const attempts: string[] = []
+  for (let i = 0; i < chain.length; i++) {
+    const provider = chain[i]
+    const upstream = provider.baseUrl.replace(/\/+$/, '') + rest
+    try {
+      const ac = new AbortController()
+      const timer = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS)
+      let r: Response
+      try {
+        r = await fetch(upstream, {
+          method: req.method,
+          headers: buildUpstreamHeaders(tool, provider, req),
+          body: req.method === 'GET' || req.method === 'HEAD' ? undefined : new Uint8Array(body),
+          signal: ac.signal
+        })
+      } finally {
+        clearTimeout(timer)
+      }
+
+      // 5xx/429 → 换下一家（响应体丢弃）
+      if ((r.status >= 500 || r.status === 429) && i < chain.length - 1) {
+        attempts.push(`${provider.name}: HTTP ${r.status}`)
+        await r.arrayBuffer().catch(() => {})
+        continue
+      }
+
+      stats[tool].requests++
+      const outHeaders: Record<string, string> = {}
+      r.headers.forEach((v, k) => {
+        if (k === 'content-length' || k === 'content-encoding' || k === 'transfer-encoding' || k === 'connection') return
+        outHeaders[k] = v
+      })
+      outHeaders['x-ccsl-provider'] = encodeURIComponent(provider.name)
+      res.writeHead(r.status, outHeaders)
+      if (r.body) {
+        await new Promise<void>((resolve) => {
+          const stream = Readable.fromWeb(r.body as import('node:stream/web').ReadableStream)
+          stream.on('error', () => {
+            res.destroy()
+            resolve()
+          })
+          stream.pipe(res)
+          res.on('close', resolve)
+        })
+      } else {
+        res.end()
+      }
+      return
+    } catch (e) {
+      // 连接失败/超时 → 下一家（记录原因便于诊断）
+      attempts.push(`${provider.name}: ${(e as Error).message}`)
+      continue
+    }
+  }
+
+  stats[tool].errors++
+  jsonError(res, 502, `所有候选上游都失败了（共试 ${chain.length} 家）：${attempts.join('；')}`)
+}

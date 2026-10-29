@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Provider, StoreShape, ToolId, ToolStatus } from '../../shared/types'
+import type { Provider, RouterStatus, StoreShape, ToolId, ToolStatus } from '../../shared/types'
 import ProviderCard from './components/ProviderCard'
 import ProviderForm, { emptyDraft, type FormDraft } from './components/ProviderForm'
 import SettingsPanel from './components/SettingsPanel'
+import UsageDashboard from './components/UsageDashboard'
 import logoUrl from './assets/logo.png'
 
-type View = ToolId | 'settings'
+type View = ToolId | 'usage' | 'settings'
 
 const TOOLS: { id: ToolId; label: string }[] = [
   { id: 'claude', label: 'Claude Code' },
@@ -20,6 +21,7 @@ export default function App() {
     claude: { configPath: '', exists: false },
     codex: { configPath: '', exists: false }
   })
+  const [routerState, setRouterState] = useState<RouterStatus | null>(null)
   const [draft, setDraft] = useState<FormDraft | null>(null)
   const [toast, setToast] = useState<{ text: string; kind: 'ok' | 'err' } | null>(null)
   const [busyTool, setBusyTool] = useState<ToolId | null>(null)
@@ -40,13 +42,15 @@ export default function App() {
   }, [])
 
   const refresh = useCallback(async () => {
-    const [s, cs, xs] = await Promise.all([
+    const [s, cs, xs, rs] = await Promise.all([
       window.api.storeGet(),
       window.api.toolStatus('claude'),
-      window.api.toolStatus('codex')
+      window.api.toolStatus('codex'),
+      window.api.routerStatus().catch(() => null)
     ])
     setStore(s)
     setStatus({ claude: cs, codex: xs })
+    setRouterState(rs)
   }, [])
 
   useEffect(() => {
@@ -65,12 +69,16 @@ export default function App() {
       if (p.total) setUpdateBytes({ transferred: p.transferred ?? 0, total: p.total, bps: p.bytesPerSecond ?? 0 })
     })
     const un3 = window.api.onUpdateDownloaded(() => setUpdateState('downloaded'))
+    const un4 = window.api.onStoreChanged(() => {
+      void refresh()
+    })
     return () => {
       un1()
       un2()
       un3()
+      un4()
     }
-  }, [])
+  }, [refresh])
 
   const runCheck = useCallback(async () => {
     setUpdateState('checking')
@@ -125,8 +133,8 @@ export default function App() {
 
   if (!store) return <div className="loading">加载中…</div>
 
-  const toolView = view !== 'settings'
-  const activeTool = view as ToolId
+  const toolView = view === 'claude' || view === 'codex'
+  const activeTool = toolView ? (view as ToolId) : 'claude'
   const currentId = toolView ? store.current[activeTool] : null
   const providers = toolView ? store.providers.filter((p) => p.tool === activeTool) : []
   const currentProvider = providers.find((p) => p.id === currentId) ?? null
@@ -142,6 +150,22 @@ export default function App() {
       notify((e as Error).message, 'err')
     } finally {
       setBusyTool(null)
+    }
+  }
+
+  const toggleRouter = async () => {
+    const enabling = !(routerState?.[activeTool]?.enabled)
+    try {
+      const r = await window.api.routerSet(activeTool, enabling)
+      setRouterState(r)
+      notify(
+        enabling
+          ? '已开启本机路由：重启工具会话后生效；路由模式下切换供应商即时生效，上游故障自动转移'
+          : '已切回直连模式：重启工具会话后生效'
+      )
+      await refresh()
+    } catch (e) {
+      notify((e as Error).message, 'err')
     }
   }
 
@@ -244,6 +268,9 @@ export default function App() {
             <span className="count">{store.providers.filter((p) => p.tool === t.id).length}</span>
           </button>
         ))}
+        <button className={`nav ${view === 'usage' ? 'active' : ''}`} onClick={() => setView('usage')}>
+          <span>用量统计</span>
+        </button>
         <button className={`nav ${view === 'settings' ? 'active' : ''}`} onClick={() => setView('settings')}>
           <span>设置</span>
         </button>
@@ -323,6 +350,17 @@ export default function App() {
                 </p>
               </div>
               <div className="btn-row">
+                <button
+                  className={`btn sm ${routerState?.[activeTool]?.enabled ? 'primary' : ''}`}
+                  onClick={toggleRouter}
+                  title={
+                    routerState?.running
+                      ? `本机路由运行中（127.0.0.1:${routerState.port}）；${activeTool === 'claude' ? 'Claude' : 'Codex'} 已转发 ${routerState[activeTool].requests} 次，故障转移 ${routerState[activeTool].errors} 次`
+                      : '开启后请求经本机代理转发，支持自动故障转移'
+                  }
+                >
+                  {routerState?.[activeTool]?.enabled ? '本机路由：开' : '本机路由：关'}
+                </button>
                 <button className="btn sm" onClick={() => importCurrent(activeTool)}>
                   导入当前配置
                 </button>
@@ -399,6 +437,7 @@ export default function App() {
             </div>
           </>
         )}
+        {view === 'usage' && <UsageDashboard notify={notify} />}
         {view === 'settings' && (
           <SettingsPanel store={store} onChanged={refresh} notify={notify} onCheckUpdate={runCheck} updateChecking={updateState === 'checking'} />
         )}

@@ -1,0 +1,117 @@
+import { BrowserWindow, Menu, Notification, Tray, app, nativeImage } from 'electron'
+import path from 'node:path'
+import fs from 'node:fs'
+import { loadStore, saveStore } from './store'
+import { routerEnabled } from './router'
+import * as claude from './claude'
+import * as codex from './codex'
+import type { MenuItemConstructorOptions } from 'electron'
+import type { ToolId } from '../shared/types'
+
+/**
+ * 系统托盘：快速切换供应商（与主窗口同一套切换逻辑），关窗后驻留托盘。
+ * 自测模式不创建托盘。
+ */
+
+let tray: Tray | null = null
+let showMainWindow: () => void = () => {}
+
+function trayIcon(): Electron.NativeImage | undefined {
+  const p = path.join(__dirname, '../../build/icon.png')
+  if (!fs.existsSync(p)) return undefined
+  return nativeImage.createFromPath(p).resize({ width: 16, height: 16 })
+}
+
+function notify(body: string): void {
+  try {
+    if (Notification.isSupported()) new Notification({ title: 'CC Switch Local', body }).show()
+  } catch {
+    /* 通知不可用时忽略 */
+  }
+}
+
+/** 托盘切换走与 IPC 完全相同的切换函数与存储路径 */
+async function switchProvider(tool: ToolId, id: string | null): Promise<void> {
+  try {
+    const store = loadStore()
+    let provider = null
+    if (id) {
+      provider = store.providers.find((p) => p.id === id && p.tool === tool) ?? null
+      if (!provider) return
+    }
+    if (tool === 'claude') await claude.switchClaude(provider, routerEnabled(tool))
+    else await codex.switchCodex(provider, routerEnabled(tool))
+    store.current[tool] = id
+    await saveStore(store)
+    refreshTray()
+    notify(provider ? `已切换 ${tool === 'claude' ? 'Claude Code' : 'Codex'} →「${provider.name}」，重启会话后生效` : '已恢复官方配置')
+    // 主窗口若开着，实时刷新列表
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send('store:changed')
+    }
+  } catch (e) {
+    notify(`切换失败：${(e as Error).message}`)
+  }
+}
+
+function buildMenu(): Electron.Menu {
+  const store = loadStore()
+  const LABEL: Record<ToolId, string> = { claude: 'Claude Code', codex: 'Codex' }
+
+  const toolSection = (tool: ToolId): MenuItemConstructorOptions[] => {
+    const providers = store.providers.filter((p) => p.tool === tool).slice(0, 30)
+    const cur = store.current[tool]
+    const curName = cur ? (providers.find((p) => p.id === cur)?.name ?? '未知') : null
+    const items: MenuItemConstructorOptions[] = [
+      { label: `${LABEL[tool]}：${curName ? `当前「${curName}」` : '未接管（官方配置）'}`, enabled: false }
+    ]
+    for (const p of providers) {
+      items.push({
+        label: p.name,
+        type: 'checkbox',
+        checked: p.id === cur,
+        click: () => void switchProvider(tool, p.id)
+      })
+    }
+    if (providers.length === 0) {
+      items.push({ label: '（暂无供应商，打开主窗口添加）', enabled: false })
+    }
+    items.push({ label: '恢复官方配置', click: () => void switchProvider(tool, null) })
+    items.push({ type: 'separator' })
+    return items
+  }
+
+  return Menu.buildFromTemplate([
+    ...toolSection('claude'),
+    ...toolSection('codex'),
+    {
+      label: '显示主窗口',
+      click: () => showMainWindow()
+    },
+    { type: 'separator' },
+    { label: '退出', click: () => app.quit() }
+  ])
+}
+
+export function refreshTray(): void {
+  try {
+    tray?.setContextMenu(buildMenu())
+  } catch {
+    /* 托盘不存在时忽略 */
+  }
+}
+
+export function createTray(onShowMainWindow: () => void): void {
+  if (tray) return
+  showMainWindow = onShowMainWindow
+  const icon = trayIcon()
+  tray = icon ? new Tray(icon) : new Tray(nativeImage.createEmpty())
+  tray.setToolTip('CC Switch Local — 本地 API 供应商管理')
+  refreshTray()
+  tray.on('click', () => showMainWindow())
+}
+
+export function destroyTray(): void {
+  tray?.destroy()
+  tray = null
+}

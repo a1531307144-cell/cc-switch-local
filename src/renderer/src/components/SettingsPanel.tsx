@@ -1,10 +1,69 @@
 import { useEffect, useState } from 'react'
-import type { AppSettings, BackupInfo, StoreShape, ToolId } from '../../../shared/types'
+import type { AppSettings, BackupInfo, RouterStatus, StoreShape, ToolId } from '../../../shared/types'
+import { Modal } from './ui'
 
 function fmtDate(ms: number): string {
   const d = new Date(ms)
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** 加密备份的口令输入对话框（导出/导入共用） */
+function PassphraseModal({
+  mode,
+  onClose,
+  onConfirm
+}: {
+  mode: 'export' | 'import'
+  onClose: () => void
+  onConfirm: (pass: string) => void
+}) {
+  const [pass, setPass] = useState('')
+  const [pass2, setPass2] = useState('')
+  const [err, setErr] = useState('')
+  const exporting = mode === 'export'
+  const submit = () => {
+    if (pass.length < 8) return setErr('口令至少 8 个字符')
+    if (exporting && pass !== pass2) return setErr('两次输入的口令不一致')
+    setErr('')
+    onConfirm(pass)
+  }
+  return (
+    <Modal title={exporting ? '导出加密备份' : '导入加密备份'} onClose={onClose}>
+      <div className="form">
+        <p className="muted small">
+          {exporting
+            ? '供应商库（含 API Key）会用 AES-256-GCM 加密后保存到你选择的位置；口令不会存储，忘记将无法恢复。'
+            : '选择 .ccslbak 备份文件，用导出时设置的口令解密；与现有库相同的供应商会自动跳过。'}
+        </p>
+        <label>
+          {exporting ? '设置口令（至少 8 位）' : '解密口令'}
+          <input
+            type="password"
+            value={pass}
+            onChange={(e) => setPass(e.target.value)}
+            placeholder={exporting ? '用于加密这份备份' : '导出时设置的口令'}
+            autoFocus
+          />
+        </label>
+        {exporting && (
+          <label>
+            再输一遍口令
+            <input type="password" value={pass2} onChange={(e) => setPass2(e.target.value)} placeholder='重复口令' />
+          </label>
+        )}
+        {err && <div className="form-error">{err}</div>}
+        <div className="form-actions">
+          <button className="btn" onClick={onClose}>
+            取消
+          </button>
+          <button className="btn primary" onClick={submit}>
+            {exporting ? '选择保存位置' : '选择备份文件'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
 }
 
 export default function SettingsPanel({
@@ -22,6 +81,16 @@ export default function SettingsPanel({
 }) {
   const [backups, setBackups] = useState<Record<ToolId, BackupInfo[]>>({ claude: [], codex: [] })
   const [version, setVersion] = useState('')
+  const [bakModal, setBakModal] = useState<'export' | 'import' | null>(null)
+  const [bakBusy, setBakBusy] = useState(false)
+  const [router, setRouter] = useState<RouterStatus | null>(null)
+
+  useEffect(() => {
+    window.api
+      .routerStatus()
+      .then(setRouter)
+      .catch(() => {})
+  }, [])
 
   const loadBackups = async () => {
     setBackups({
@@ -56,6 +125,27 @@ export default function SettingsPanel({
   }
 
   const s = store.settings
+
+  const runBackup = async (mode: 'export' | 'import', pass: string) => {
+    setBakBusy(true)
+    try {
+      if (mode === 'export') {
+        const r = await window.api.backupExport(pass)
+        if (r.canceled) return
+        notify('已导出加密备份（口令未存储，请妥善保管文件与口令）')
+      } else {
+        const r = await window.api.backupImport(pass)
+        if (r.canceled) return
+        notify(`导入完成：新增 ${r.added} 条，跳过 ${r.skipped} 条（已存在或不合法）`)
+        await onChanged()
+      }
+      setBakModal(null)
+    } catch (e) {
+      notify((e as Error).message, 'err')
+    } finally {
+      setBakBusy(false)
+    }
+  }
 
   return (
     <div className="settings">
@@ -111,6 +201,36 @@ export default function SettingsPanel({
         </div>
       </section>
 
+      <section className="card">
+        <h3>本机路由</h3>
+        <p className="muted small">
+          在工具页用「本机路由」开关开启。开启后请求经 127.0.0.1 代理转发：切换供应商即时生效，上游故障时按列表顺序自动转移
+          （最简版仅透传 Anthropic/OpenAI 兼容端点，协议转换留待后续版本）。
+        </p>
+        <p className="muted small">
+          {router?.running
+            ? `状态：运行中（127.0.0.1:${router.port}）｜Claude 转发 ${router.claude.requests} 次/失败 ${router.claude.errors} 次｜Codex 转发 ${router.codex.requests} 次/失败 ${router.codex.errors} 次`
+            : '状态：未运行'}
+          {router?.error ? `｜最近错误：${router.error}` : ''}
+        </p>
+      </section>
+
+      <section className="card">
+        <h3>备份与迁移</h3>
+        <p className="muted small">
+          把供应商库导出为 AES-256-GCM 加密文件，用于跨设备迁移或冷备份。文件用你设置的口令加密，
+          Key 永远不会离开本机——需要迁移时手动把文件带到另一台电脑导入即可。
+        </p>
+        <div className="btn-row">
+          <button className="btn sm" onClick={() => setBakModal('export')}>
+            导出加密备份
+          </button>
+          <button className="btn sm" onClick={() => setBakModal('import')}>
+            导入加密备份
+          </button>
+        </div>
+      </section>
+
       {(['claude', 'codex'] as ToolId[]).map((tool) => (
         <section className="card" key={tool}>
           <h3>{tool === 'claude' ? 'Claude Code' : 'Codex'} 配置备份（最近 {backups[tool].length} 份，自动保留 10 份）</h3>
@@ -154,6 +274,14 @@ export default function SettingsPanel({
           切换只改动目标工具配置文件中的少量键，其余内容原样保留，并在每次写入前自动备份。
         </p>
       </section>
+
+      {bakModal && (
+        <PassphraseModal
+          mode={bakModal}
+          onClose={() => (bakBusy ? undefined : setBakModal(null))}
+          onConfirm={(pass) => void runBackup(bakModal, pass)}
+        />
+      )}
     </div>
   )
 }

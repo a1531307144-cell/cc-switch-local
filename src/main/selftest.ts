@@ -5,7 +5,11 @@ import { loadStore, newId, saveStore, storeFile } from './store'
 import * as claude from './claude'
 import * as codex from './codex'
 import { importFromCcSwitch } from './importer'
+import { decryptBackup, exportBackupToFile, importBackupFromFile } from './backup'
+import { usageStats } from './usage'
+import { routerPort, routerStatus, startRouter, stopRouter } from './router'
 import { detectVendor } from '../shared/vendors'
+import http from 'node:http'
 
 interface Check {
   name: string
@@ -152,22 +156,30 @@ export async function runSelfTest(): Promise<void> {
       assert(env.ANTHROPIC_AUTH_TOKEN === 'sk-old-token-9999', '恢复后应为夹具原始 AUTH_TOKEN')
     })
 
-    await step('Codex 切换 C：config.toml 写入 provider 段，auth.json 写入 Key', async () => {
+    await step('Codex 切换 C：关键字段写入，注释与 profile 段原样保留', async () => {
       const r = await codex.switchCodex(pc)
       assert(r.files.length === 2, `应写 2 个文件，实际 ${r.files.length}`)
       const tomlText = await fsp.readFile(r.files[0], 'utf8')
       assert(tomlText.includes('base_url = "https://c.example.com/v1"'), 'base_url 未写入')
       assert(tomlText.includes('model_provider = "ccsl"'), 'model_provider 未写入')
       assert(tomlText.includes('model = "gpt-test"'), 'model 未写入')
+      assert(tomlText.includes('# 用户手工维护的注释'), '顶层注释丢失（不应全量重写）')
+      assert(tomlText.includes('# profile 内注释'), '段内注释丢失')
+      assert(tomlText.includes('approval_policy = "on-request"'), '用户顶层键丢失')
+      assert(tomlText.includes('[profile.fast]'), '用户 profile 段丢失')
+      assert(tomlText.includes('model_reasoning_effort = "low"'), 'profile 内容丢失')
       const auth = await readJson(r.files[1])
       assert(auth.OPENAI_API_KEY === pc.apiKey, 'OPENAI_API_KEY 未写入')
       return `备份：${r.backup}`
     })
 
-    await step('Codex 恢复官方配置：provider 段被移除', async () => {
+    await step('Codex 恢复官方配置：本工具写入的键被移除，注释与用户段仍在', async () => {
       await codex.switchCodex(null)
       const tomlText = await fsp.readFile(path.join(home, '.codex', 'config.toml'), 'utf8')
       assert(!tomlText.includes('model_provider = "ccsl"'), 'model_provider 应被移除')
+      assert(!tomlText.includes('[model_providers.ccsl]'), 'ccsl 段应被移除')
+      assert(tomlText.includes('# 用户手工维护的注释'), '恢复后顶层注释丢失')
+      assert(tomlText.includes('[profile.fast]'), '恢复后 profile 段丢失')
     })
 
     await step('cc-switch 迁移导入：从旧版 config.json 挖出供应商', async () => {
@@ -212,6 +224,86 @@ export async function runSelfTest(): Promise<void> {
       )
     })
 
+    await step('用量统计：解析 Claude/Codex 会话日志并聚合（含 message.id 去重）', async () => {
+      const proj = path.join(home, '.claude', 'projects', 'proj-x')
+      await fsp.mkdir(proj, { recursive: true })
+      const claudeLines = [
+        JSON.stringify({
+          type: 'assistant',
+          timestamp: '2026-10-29T10:00:00Z',
+          message: {
+            id: 'msg_1',
+            model: 'claude-sonnet-4-5',
+            usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 200, cache_creation_input_tokens: 10 }
+          }
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          timestamp: '2026-10-29T10:01:00Z',
+          message: {
+            id: 'msg_1',
+            model: 'claude-sonnet-4-5',
+            usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 200, cache_creation_input_tokens: 10 }
+          }
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          timestamp: '2026-10-30T10:00:00Z',
+          message: {
+            id: 'msg_2',
+            model: 'claude-opus-4-6',
+            usage: { input_tokens: 20, output_tokens: 80, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+          }
+        }),
+        '这不是一行合法 JSON',
+        JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } })
+      ].join('\n')
+      await fsp.writeFile(path.join(proj, 'session-1.jsonl'), claudeLines, 'utf8')
+
+      const sdir = path.join(home, '.codex', 'sessions', '2026', '10', '29')
+      await fsp.mkdir(sdir, { recursive: true })
+      const codexLines = [
+        JSON.stringify({ timestamp: '2026-10-29T09:00:00Z', type: 'turn_context', payload: { model: 'gpt-5.1-codex' } }),
+        JSON.stringify({
+          timestamp: '2026-10-29T09:00:05Z',
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              total_token_usage: { input_tokens: 500, cached_input_tokens: 100, output_tokens: 200, total_tokens: 700 },
+              last_token_usage: { input_tokens: 500, cached_input_tokens: 100, output_tokens: 200 }
+            }
+          }
+        }),
+        JSON.stringify({
+          timestamp: '2026-10-29T09:02:00Z',
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              total_token_usage: { input_tokens: 900, cached_input_tokens: 150, output_tokens: 400, total_tokens: 1300 },
+              last_token_usage: { input_tokens: 400, cached_input_tokens: 50, output_tokens: 200 }
+            }
+          }
+        })
+      ].join('\n')
+      await fsp.writeFile(path.join(sdir, 'rollout-test.jsonl'), codexLines, 'utf8')
+
+      const stats = await usageStats()
+      assert(stats.scannedFiles === 2, `应扫描 2 个文件，实际 ${stats.scannedFiles}`)
+      assert(stats.totals.requests === 4, `总请求应为 4（Claude 2 + Codex 2），实际 ${stats.totals.requests}`)
+      assert(stats.totals.input === 1020, `输入 Token 应为 1020，实际 ${stats.totals.input}`)
+      assert(stats.totals.output === 530, `输出 Token 应为 530，实际 ${stats.totals.output}`)
+      assert(stats.totals.cacheRead === 350, `缓存读应为 350，实际 ${stats.totals.cacheRead}`)
+      assert(stats.totals.cost > 0, '估算花费应大于 0')
+      const sonnet = stats.models.find((m) => m.model === 'claude-sonnet-4-5')
+      assert(sonnet?.requests === 1, `msg_1 去重后 sonnet 应为 1 次请求，实际 ${sonnet?.requests}`)
+      const codexModel = stats.models.find((m) => m.model === 'gpt-5.1-codex')
+      assert(codexModel?.requests === 2, `Codex 会话应计 2 次请求，实际 ${codexModel?.requests}`)
+      assert(stats.recent.length >= 3, `recent 应 ≥ 3 条，实际 ${stats.recent.length}`)
+      return `扫描 ${stats.scannedFiles} 文件 ${stats.scanMs}ms`
+    })
+
     await step('删除供应商：从存储中移除且不影响其它', async () => {
       const s = loadStore()
       const before = s.providers.length
@@ -220,6 +312,123 @@ export async function runSelfTest(): Promise<void> {
       const reloaded = loadStore()
       assert(reloaded.providers.length === before - 1, `应剩 ${before - 1} 条，实际 ${reloaded.providers.length}`)
       assert(reloaded.providers.every((p) => p.id !== pb.id), '供应商B 应被删除')
+    })
+
+    const bakFile = path.join(home, 'selftest-backup.ccslbak')
+    await step('加密备份导出：AES-256-GCM 文件生成且不含明文 Key', async () => {
+      await exportBackupToFile(bakFile, 'selftest-pass-1234')
+      const buf = await fsp.readFile(bakFile)
+      assert(buf.subarray(0, 8).toString('ascii') === 'CCSLBAK1', '文件头应为 CCSLBAK1')
+      assert(!buf.toString('utf8').includes('sk-test-a-1234567890abcd'), '文件中出现明文 Key')
+    })
+
+    await step('加密备份解密：错误口令失败，正确口令还原出供应商库', async () => {
+      const buf = await fsp.readFile(bakFile)
+      let wrongFailed = false
+      try {
+        decryptBackup(buf, 'wrong-pass-9999')
+      } catch {
+        wrongFailed = true
+      }
+      assert(wrongFailed, '错误口令应解密失败')
+      const payload = decryptBackup(buf, 'selftest-pass-1234')
+      assert(payload.kind === 'ccsl-backup' && payload.version === 1, '载荷标识不合法')
+      const s = loadStore()
+      assert(payload.providers.length === s.providers.length, `应含 ${s.providers.length} 条，实际 ${payload.providers.length}`)
+    })
+
+    await step('加密备份导入：去重合并（删掉的供应商被找回，未删的跳过）', async () => {
+      const s = loadStore()
+      const before = s.providers.length
+      // 删掉一条再导入：备份里有它，应被找回（added=1），其余全部跳过
+      const victim = s.providers[0]
+      s.providers = s.providers.filter((p) => p.id !== victim.id)
+      await saveStore(s)
+      const r = await importBackupFromFile(bakFile, 'selftest-pass-1234')
+      assert(r.added === 1, `应新增 1 条，实际 ${r.added}`)
+      const after = loadStore()
+      assert(after.providers.length === before, `导入后应恢复为 ${before} 条，实际 ${after.providers.length}`)
+      assert(
+        after.providers.some((p) => p.tool === victim.tool && p.baseUrl === victim.baseUrl && p.apiKey === victim.apiKey),
+        '被删供应商应被找回'
+      )
+    })
+
+    await step('本机路由：路由模式写入占位 Key 与代理地址（Claude/Codex）', async () => {
+      const s = loadStore()
+      s.current.claude = pa.id
+      await saveStore(s)
+      await claude.switchClaude(pa, true)
+      const data = await readJson(claudeSettings)
+      const env = data.env as Record<string, unknown>
+      assert(
+        env.ANTHROPIC_BASE_URL === `http://127.0.0.1:${routerPort()}/claude`,
+        `BASE_URL 应指向本机路由，实际 ${String(env.ANTHROPIC_BASE_URL)}`
+      )
+      assert(env.ANTHROPIC_AUTH_TOKEN === 'ccsl-local-router', '路由模式应写占位 Key（真实 Key 不落盘）')
+      await codex.switchCodex(pc, true)
+      const tomlText = await fsp.readFile(path.join(home, '.codex', 'config.toml'), 'utf8')
+      assert(
+        tomlText.includes(`base_url = "http://127.0.0.1:${routerPort()}/codex"`),
+        'codex base_url 应指向本机路由'
+      )
+      const auth = await readJson(path.join(home, '.codex', 'auth.json'))
+      assert(auth.OPENAI_API_KEY === 'ccsl-local-router', 'codex auth 应写占位 Key')
+      await codex.switchCodex(null)
+    })
+
+    await step('本机路由：故障转移（第一家 500 → 自动切第二家并注入真实 Key）', async () => {
+      const okReceived: { auth: string | null; body: string; url: string }[] = []
+      const ok = http.createServer((req, res) => {
+        let b = ''
+        req.on('data', (c: Buffer) => (b += c))
+        req.on('end', () => {
+          okReceived.push({
+            auth: (req.headers.authorization as string) ?? null,
+            body: b,
+            url: req.url ?? ''
+          })
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, echo: b }))
+        })
+      })
+      const fail = http.createServer((_req, res) => {
+        res.writeHead(500, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: 'mock down' }))
+      })
+      await new Promise<void>((r) => ok.listen(0, '127.0.0.1', () => r()))
+      await new Promise<void>((r) => fail.listen(0, '127.0.0.1', () => r()))
+      const okAddr = ok.address() as { port: number }
+      const failAddr = fail.address() as { port: number }
+
+      const s = loadStore()
+      const pFail = { id: newId(), tool: 'claude' as const, name: '路由-故障家', baseUrl: `http://127.0.0.1:${failAddr.port}`, apiKey: 'sk-router-fail-000000', keyType: 'auth_token' as const, createdAt: Date.now(), updatedAt: Date.now() }
+      const pOk = { id: newId(), tool: 'claude' as const, name: '路由-正常家', baseUrl: `http://127.0.0.1:${okAddr.port}`, apiKey: 'sk-router-ok-1234567890', keyType: 'auth_token' as const, createdAt: Date.now(), updatedAt: Date.now() }
+      s.providers.unshift(pOk)
+      s.providers.unshift(pFail)
+      s.current.claude = pFail.id
+      await saveStore(s)
+
+      await startRouter()
+      try {
+        const r = await fetch(`http://127.0.0.1:${routerPort()}/claude/v1/messages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01' },
+          body: '{"ping":1}'
+        })
+        assert(r.status === 200, `故障转移后应 200，实际 ${r.status}，响应：${r.status === 200 ? '' : await r.text()}`)
+        assert(r.headers.get('x-ccsl-provider') === encodeURIComponent('路由-正常家'), `应由第二家服务，实际 ${r.headers.get('x-ccsl-provider')}`)
+        const j = (await r.json()) as { ok: boolean; echo: string }
+        assert(j.ok === true && j.echo === '{"ping":1}', '请求体应原样透传')
+        assert(okReceived[0]?.auth === `Bearer ${pOk.apiKey}`, '真实 Key 应注入 upstream 头')
+        assert(okReceived[0]?.url === '/v1/messages', `子路径应正确拼接，实际 ${okReceived[0]?.url}`)
+        const st = routerStatus()
+        assert(st.running && st.claude.requests >= 1, '路由状态应记录转发次数')
+      } finally {
+        stopRouter()
+        ok.close()
+        fail.close()
+      }
     })
   }
 

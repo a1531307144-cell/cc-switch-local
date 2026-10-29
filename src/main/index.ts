@@ -6,8 +6,12 @@ import * as claude from './claude'
 import * as codex from './codex'
 import { testProvider } from './test'
 import { importFromCcSwitch } from './importer'
+import { backupExport, backupImport } from './backup'
+import { usageStats } from './usage'
+import { routerEnabled, routerStatus, startRouter, stopRouter } from './router'
 import { PRESETS } from './presets'
 import { registerUpdateIpc, startupCheck } from './updater'
+import { createTray, refreshTray } from './tray'
 import { runSelfTest } from './selftest'
 import { RELEASES_URL } from '../shared/constants'
 import type { AppSettings, Provider, ProviderInput, TestInput, ToolId } from '../shared/types'
@@ -77,6 +81,25 @@ function createWindow(theme: ThemeMode = 'system'): void {
   win.on('closed', () => {
     win = null
   })
+  win.on('close', (e) => {
+    if (!quitting && !SELFTEST) {
+      e.preventDefault()
+      win?.hide()
+    }
+  })
+}
+
+// 关窗 = 驻留托盘；只有托盘菜单「退出」或系统关机才真正退出
+let quitting = false
+
+function showMainWindow(): void {
+  if (!win) {
+    createWindow(loadStore().settings.theme)
+    return
+  }
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
 }
 
 function applySettings(settings: AppSettings): void {
@@ -132,6 +155,7 @@ function registerIpc(): void {
       }
       store.providers[idx] = updated
       await saveStore(store)
+      refreshTray()
       return updated
     }
     const created: Provider = {
@@ -149,6 +173,7 @@ function registerIpc(): void {
     }
     store.providers.push(created)
     await saveStore(store)
+    refreshTray()
     return created
   })
 
@@ -159,6 +184,7 @@ function registerIpc(): void {
       if (store.current[t] === id) store.current[t] = null
     }
     await saveStore(store)
+    refreshTray()
     return true
   })
 
@@ -169,9 +195,13 @@ function registerIpc(): void {
       provider = store.providers.find((p) => p.id === id && p.tool === tool) ?? null
       if (!provider) throw new Error('供应商不存在')
     }
-    const result = tool === 'claude' ? await claude.switchClaude(provider) : await codex.switchCodex(provider)
+    const result =
+      tool === 'claude'
+        ? await claude.switchClaude(provider, routerEnabled(tool))
+        : await codex.switchCodex(provider, routerEnabled(tool))
     store.current[tool] = id
     await saveStore(store)
+    refreshTray()
     return result
   })
 
@@ -192,6 +222,37 @@ function registerIpc(): void {
   ipcMain.handle('ccswitch:import', () => importFromCcSwitch())
 
   ipcMain.handle('presets:get', () => PRESETS)
+
+  ipcMain.handle('backup:export', (_e, passphrase: string) => backupExport(passphrase))
+
+  ipcMain.handle('backup:import', (_e, passphrase: string) => backupImport(passphrase))
+
+  ipcMain.handle('usage:get', () => usageStats())
+
+  ipcMain.handle('router:status', () => routerStatus())
+
+  ipcMain.handle('router:set', async (_e, tool: ToolId, enabled: boolean) => {
+    if (!(tool === 'claude' || tool === 'codex')) throw new Error('非法的工具类型')
+    if (typeof enabled !== 'boolean') throw new Error('非法的开关值')
+    const store = loadStore()
+    if (enabled && !store.current[tool]) throw new Error('请先选择一个供应商，再开启本机路由')
+    const router = { claude: store.settings.router?.claude ?? false, codex: store.settings.router?.codex ?? false }
+    router[tool] = enabled
+    store.settings.router = router
+    await saveStore(store)
+    if (enabled || router.claude || router.codex) {
+      await startRouter().catch((e) => {
+        throw new Error(`路由服务启动失败：${(e as Error).message}`)
+      })
+    } else if (!router.claude && !router.codex) {
+      stopRouter()
+    }
+    // 按新模式重写该工具配置（无当前供应商时退回官方配置）
+    const provider = store.current[tool] ? store.providers.find((p) => p.id === store.current[tool]) ?? null : null
+    if (tool === 'claude') await claude.switchClaude(provider, enabled)
+    else await codex.switchCodex(provider, enabled)
+    return routerStatus()
+  })
 
   ipcMain.handle('settings:update', async (_e, patch: Partial<AppSettings>) => {
     const store = loadStore()
@@ -219,8 +280,9 @@ function registerIpc(): void {
   registerUpdateIpc()
 }
 
-// 自测是隔离的无头运行，不参与单实例锁——否则用户开着应用时自测会静默退出（2026-10-29 实测）
-const gotLock = SELFTEST || app.requestSingleInstanceLock()
+// 自测是隔离的无头运行，不参与单实例锁——否则用户开着应用时自测会静默退出（2026-10-29 实测）。
+// 显式设了 CCS_DATA_DIR 的实例同理：它是带独立数据目录的测试实例，与用户实例互不干扰。
+const gotLock = SELFTEST || process.env.CCS_DATA_DIR || app.requestSingleInstanceLock()
 
 if (!gotLock) {
   app.quit()
@@ -241,6 +303,12 @@ if (!gotLock) {
     const store = loadStore()
     applySettings(store.settings)
     createWindow(store.settings.theme)
+    createTray(showMainWindow)
+    // 上次会话开启了路由模式 → 直接拉起代理（配置文件仍指向本机路由）
+    const rs = loadStore().settings.router
+    if (rs?.claude || rs?.codex) {
+      startRouter().catch((e) => console.error('[router] 启动失败:', e))
+    }
     void startupCheck(store.settings.autoUpdate)
     nativeTheme.on('updated', () => {
       if (loadStore().settings.theme === 'system') syncTitleBar('system')
@@ -250,7 +318,12 @@ if (!gotLock) {
     })
   })
 
+  app.on('before-quit', () => {
+    quitting = true
+  })
+
+  // 有托盘常驻：关窗不退出（见 createWindow 的 close 拦截），这里兜底 darwin 语义
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit()
+    if (process.platform !== 'darwin' && quitting) app.quit()
   })
 }

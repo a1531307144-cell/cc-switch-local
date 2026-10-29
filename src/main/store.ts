@@ -8,7 +8,8 @@ import type { AppSettings, StoreShape } from '../shared/types'
 const DEFAULT_SETTINGS: AppSettings = {
   autoUpdate: true,
   autoStart: false,
-  theme: 'system'
+  theme: 'system',
+  router: { claude: false, codex: false }
 }
 
 /**
@@ -39,7 +40,15 @@ export function loadStore(): StoreShape {
         codex: parsed.current?.codex ?? null
       },
       providers: Array.isArray(parsed.providers) ? parsed.providers : [],
-      settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) }
+      settings: {
+        ...DEFAULT_SETTINGS,
+        ...(parsed.settings ?? {}),
+        router: {
+          claude: parsed.settings?.router?.claude ?? DEFAULT_SETTINGS.router!.claude,
+          codex: parsed.settings?.router?.codex ?? DEFAULT_SETTINGS.router!.codex,
+          ...(typeof parsed.settings?.router?.port === 'number' ? { port: parsed.settings.router.port } : {})
+        }
+      }
     }
   } catch {
     return {

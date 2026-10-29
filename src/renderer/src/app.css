@@ -795,3 +795,151 @@ code {
   background: var(--err);
   color: #fff;
 }
+
+/* ---------- 预设选择器 ---------- */
+.preset-picker {
+  position: relative;
+}
+
+.preset-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  box-shadow: var(--shadow-2);
+  z-index: 30;
+  padding: 4px;
+}
+
+.preset-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.preset-item:hover {
+  background: var(--accent-soft);
+}
+
+.preset-domain {
+  font-size: 12px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ---------- 用量统计 ---------- */
+.usage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.usage-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.usage-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.stat-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  corner-shape: squircle;
+  padding: 14px 16px;
+}
+
+.stat-num {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.stat-label {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.heatmap-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.heatmap {
+  display: flex;
+  gap: 3px;
+  width: max-content;
+}
+
+.heatmap-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.heatmap-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: var(--chip);
+}
+
+.heatmap-cell.lv1 {
+  background: color-mix(in srgb, var(--accent) 30%, var(--panel));
+}
+
+.heatmap-cell.lv2 {
+  background: color-mix(in srgb, var(--accent) 55%, var(--panel));
+}
+
+.heatmap-cell.lv3 {
+  background: var(--accent);
+}
+
+.heatmap-cell.lv4 {
+  background: var(--accent-ink);
+}
+
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.heatmap-legend .heatmap-cell {
+  width: 10px;
+  height: 10px;
+}
+
+.trend {
+  width: 100%;
+  height: 120px;
+}
+
+.trend-bar {
+  fill: var(--accent);
+  opacity: 0.85;
+}

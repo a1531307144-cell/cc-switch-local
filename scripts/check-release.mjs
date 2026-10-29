@@ -71,7 +71,8 @@ const LOGIN_OK_FILES = new Set(['package.json', 'HANDOVER.md', 'src/shared/const
 const KEY_OK_FILES = new Set(['src/main/selftest.ts'])
 
 const PATTERNS = [
-  [/C:\\\\Users\\\\[^"'\s\\]+|\/Users\/[^\/\s"']+|\/home\/[^\/\s"']+/, '本机绝对路径'],
+  // Unix 风格路径要求前边界（行首/引号/空白/=），避免误报文档里的相对路径如 tmp-selftest/home/.codex（2026-10-30 实测）
+  [/(^|["'\s=])\/(Users|home)\/[^\/\s"']+|C:\\\\Users\\\\[^"'\s\\]+/, '本机绝对路径'],
   [/gh[pousr]_[A-Za-z0-9]{10,}/, 'GitHub token'],
   [/AKIA[0-9A-Z]{16}/, 'AWS AccessKey'],
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, '私钥'],

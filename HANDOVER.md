@@ -12,20 +12,20 @@
 **CC Switch Local**：本地优先的 AI 编码工具 API 供应商管理与一键切换桌面应用。
 - 支持 **Claude Code**（写 `~/.claude/settings.json`）与 **Codex**（写 `~/.codex/config.toml` + `auth.json`）。
 - 用户的核心诉求是**安全性**：API Key 全部存本机、代码开源可审计、零遥测零上传。任何"把数据传出去"的功能都与项目定位冲突，不要加。
-- 灵感来自 GitHub 上的 farion1231/cc-switch，但只复刻其中"切换供应商"这一核心；刻意不做其本地路由/聚合/用量统计等重功能（见路线图）。
+- 对标 farion1231/cc-switch（v4.0.21 起为功能参照物）。2026-10-30 用户拍板「功能实现完全相似」为目标分多版走：v0.6.0 交付预设库 / 关键字段写入 / 用量统计 / 本机路由最简版 / 托盘 / 加密备份；**协议转换与聚合模式、MCP、多工具支持、云同步（决定不做，用加密备份文件替代）见 §9**。
 
-## 2. 当前状态（2026-10-28：v0.1.0 首发，同日完成全面安全审查后发布 v0.1.1）
+## 2. 当前状态（2026-10-30：v0.6.0 功能对标版）
 
 | 项 | 状态 |
 | --- | --- |
 | TypeScript 类型检查 | ✅ 通过 |
-| 端到端自测（10 项断言） | ✅ 10/10 通过（隔离目录运行，未触碰真实配置） |
-| Windows NSIS 安装包 | ✅ 已产出 `release/CC Switch Local Setup 0.1.0.exe` |
-| README / LICENSE / release.yml | ✅ 就绪 |
-| git 仓库 + 首次提交 | ✅ 已推送到 GitHub |
-| GitHub 仓库 | ✅ `a1531307144-cell/cc-switch-local`（公开，2026-10-28 用户确认发布） |
+| 端到端自测（17 步断言） | ✅ 17/17 通过（隔离目录 + 本地 mock 上游，未触碰真实配置） |
+| CDP 实机验证 | ✅ 6 张截图（主界面/预设搜索/用量仪表盘/设置/路由开启/暗色）+ 关窗驻留 + 路由自启动 |
+| Windows 打包 | ✅ win-unpacked 实机验证通过，NSIS 由 CI 产出 |
+| 新功能（v0.6.0） | ✅ 256 条预设库、Codex 手术式写入、用量统计、本机路由（透传+故障转移）、托盘、加密备份 |
+| GitHub 仓库 | ✅ `a1531307144-cell/cc-switch-local`（公开） |
 
-**明确没做的**（用户已认可放进 v2）：主密码加密、托盘常驻、用量统计、本地路由/聚合、更多工具支持（Gemini CLI 等）、MCP 管理、多语言。完整清单见 §9。
+**对标 cc-switch 仍未做的**（见 §9 路线图）：路由协议转换、聚合模式、会话阅读器、MCP/Skills/提示词、多工具、额度显示、主密码加密。
 
 ## 3. 技术栈与架构
 
@@ -35,17 +35,22 @@
 src/
   shared/types.ts        # 全部跨进程类型 + IPC 接口 Api（唯一事实来源）
   main/                  # 主进程（Node 侧）
-    index.ts             # 入口：窗口、IPC 注册、单实例、--selftest 分支
+    index.ts             # 入口：窗口、IPC 注册、单实例（CCS_DATA_DIR 实例豁免）、--selftest 分支
     store.ts             # providers.json 存取（原子写、串行化写队列）
-    claude.ts            # Claude 切换/备份/恢复/状态（homeDir 支持 CCS_HOME_OVERRIDE）
-    codex.ts             # Codex 切换（@iarna/toml 解析重写 config.toml + auth.json）
+    claude.ts            # Claude 切换/备份/恢复/状态（homeDir 支持 CCS_HOME_OVERRIDE；switchClaude 第二参 viaRouter）
+    codex.ts             # Codex 切换（行级手术式编辑 config.toml，保留注释/顺序；switchCodex 第二参 viaRouter）
+    router.ts            # 本机路由最简版：127.0.0.1 代理 + 故障转移（/claude/*、/codex/*，占位 Key，真实 Key 注入在代理内）
+    usage.ts             # 用量统计：扫描会话日志（Claude projects / Codex sessions），增量缓存按 mtime+size，成本按单价表估算
+    backup.ts            # 加密备份：AES-256-GCM（scrypt 派生），导出/导入 .ccslbak，Key 不出机
+    tray.ts              # 系统托盘：快切菜单 + 关窗驻留（close→hide，before-quit 才真退）
     test.ts              # 连接测试（electron net.fetch，12s 超时，区分 ok/auth/http/network）
     importer.ts          # 从 cc-switch 迁移（旧版 JSON + SQLite，递归挖掘，尽力而为不抛错）
-    presets.ts           # 内置预设（只收录官方文档明确的端点）
+    presets.ts           # 预设合并层：精选中文官方条目 + presets-data.ts（256 条生成数据，去重）
+    presets-data.ts      # scripts/extract-presets.mjs 从 cc-switch（MIT）自动生成，勿手改
     updater.ts           # electron-updater（打包后启用，失败静默）
-    selftest.ts          # 端到端自测脚本
+    selftest.ts          # 端到端自测脚本（17 步）
   preload/index.ts       # contextBridge 暴露 window.api（类型 = shared.Api）
-  renderer/              # React UI（中文）：App + ProviderCard/ProviderForm/SettingsPanel
+  renderer/              # React UI（中文）：App + ProviderCard/ProviderForm/SettingsPanel/UsageDashboard
 ```
 
 **数据流**：Renderer ←(contextBridge ipcRenderer.invoke)→ 主进程 ←(fs 原子写)→ 三个数据位置：
@@ -57,7 +62,20 @@ src/
 - 切到供应商 = 写 `env.ANTHROPIC_BASE_URL` + 按 keyType 写 `AUTH_TOKEN` 或 `API_KEY` 并**删除另一个**；`env` 其余键与文件其余部分原样保留。
 - 「恢复官方配置」= 删除这三个键。
 - **每次写入前自动备份**，文件名 `settings.json.bak-时间戳`，同秒冲突会追加 `-1` 后缀（这里踩过坑，见 §8），保留最近 10 份。
-- Codex：`model_provider = "ccsl"` + `[model_providers.ccsl]`（`requires_openai_auth = true`，Key 进 auth.json）。TOML 是"解析→重写"，**注释会丢**（已有备份兜底，UI/README 已注明）。
+- Codex：`model_provider = "ccsl"` + `[model_providers.ccsl]`（`requires_openai_auth = true`，Key 进 auth.json）。**v0.6.0 起是行级手术式编辑**：只替换/追加我们拥有的键（顶层 `model_provider`/`model` 与 ccsl 段），注释、键顺序、`[profile.*]` 等原样保留；写盘前用完整 TOML 解析校验，解析失败即中止（绝不写坏用户文件）。
+
+**本机路由（v0.6.0 最简版语义）**：
+- 每工具独立开关（`settings.router.claude/codex`）。开启后配置文件里只落**占位 Key**（`ccsl-local-router`）和 `http://127.0.0.1:15721/{claude|codex}`；真实 Key 只在 store 与代理内存里。
+- 代理只**透传** Anthropic/OpenAI 兼容端点（不做协议转换），故障转移 = 当前供应商失败（连接错误/5xx/429）后按列表顺序试下一家（上限 4 家）。路由模式下切换供应商即时生效（代理每请求重读 store）。
+- 端口：`CCS_ROUTER_PORT` 环境变量（测试）> `settings.router.port` > 默认 15721。上次退出时若开着路由，启动时自动拉起代理。
+- 自测的故障转移步骤用本地 mock 上游（500 家 + 200 家），不依赖外网。
+
+**用量统计语义**：
+- 扫描 `~/.claude/projects/**/*.jsonl`（assistant 行 `message.usage`，按 `message.id` 去重）与 `~/.codex/sessions/**/*.jsonl`（`token_count` 事件累计值取最后、请求次数按累计值变化次数）。所有解析容错，坏行跳过。
+- 增量缓存 `usage-cache.json` 按 (mtime, size) 复用；**改单价表或口径必须递增 usage.ts 里的 CACHE_VERSION**，否则旧缓存不失效。
+- 花费是估算：PRICING 表按模型名前缀匹配（USD/1M tokens），未命中走兜底价——UI 已标注「估算」。
+
+**加密备份语义**：导出 = 对话框选路径 → `CCSLBAK1|salt|iv|gcm-tag|密文`；口令 8-200 字符、不存储。导入按 `tool|baseUrl|apiKey` 去重合并，主进程逐条 sanitize（备份文件被篡改也不会注入非法数据）。
 
 ## 4. 常用命令
 
@@ -69,14 +87,14 @@ npm run selftest     # 自测（见下）
 npm run dist         # 打包 NSIS 安装包（见下）
 ```
 
-**自测**（改主进程逻辑后必跑）：
+**自测**（改主进程逻辑后必跑，17 步全过才算过）：
 ```bash
 rm -rf tmp-selftest/home tmp-selftest/data   # 重置夹具（.claude/.codex 夹具在 git 里？否——见下注）
 # 夹具重建：tmp-selftest/home/.claude/settings.json 等三个文件内容见仓库历史或下方 §7
 CCS_HOME_OVERRIDE=.../tmp-selftest/home CCS_DATA_DIR=.../tmp-selftest/data \
-CCS_SELFTEST_OUT=.../tmp-selftest/report.json npx electron . --selftest
+CCS_SELFTEST_OUT=.../tmp-selftest/report.json CCS_ROUTER_PORT=15999 npx electron . --selftest
 ```
-> 注：`tmp-selftest/` 在 .gitignore 里。若夹具丢失，按 §7 的内容重建（三份：settings.json / config.toml / auth.json）。自测**没有隔离变量会直接拒绝运行**，这是防止误写真实 `~/.claude` 的保险丝，别拆。
+> 注：`tmp-selftest/` 在 .gitignore 里。若夹具丢失，按 §7 的内容重建（三份：settings.json / config.toml / auth.json）。自测**没有隔离变量会直接拒绝运行**，这是防止误写真实 `~/.claude` 的保险丝，别拆。`CCS_ROUTER_PORT` 给路由自测步骤用（避开可能被占的 15721）。
 
 **打包**（国内网络必须带镜像，否则从 GitHub 下载 Electron zip 会超时）：
 ```bash
@@ -93,7 +111,7 @@ npx electron-builder --win --publish never
 4. **cc-switch 导入用"递归挖掘"而非固定 schema**：原版数据结构（尤其新版 SQLite）没有稳定公开 schema，容错优先，挖不到就报告 skipped，绝不抛错。
 5. **`node:sqlite`（实验特性）读 cc-switch.db**：避免引入 better-sqlite3 等原生模块（Windows 下 ABI 重建是坑）。Electron 38 内置 Node 22，支持。
 6. **本地打包时 electron-builder.yml 不带 publish 块**（见 §6 步骤 0 的原因）。
-7. **预设只收录官方公开文档明确给出端点的服务商**，并在 UI/README 标注"以官方文档为准"——不要随手往里加道听途说的端点。
+7. **预设数据来源要合规**：v0.6.0 起 256 条预设改编自 cc-switch（MIT），生成文件头部带归属声明，README 加了致谢；**只收录端点 URL 等公开信息**（提取时已剔除 OAuth/隐藏预设），不要往里加带密钥的内容。
 
 ## 6. 发布流程（逐步执行；第 0 步是硬前提）
 
@@ -137,10 +155,16 @@ npx electron-builder --win --publish never
   }
 }
 ```
-`tmp-selftest/home/.codex/config.toml`：
+`tmp-selftest/home/.codex/config.toml`（注释与 `[profile.fast]` 是断言对象，别删）：
 ```toml
+# 用户手工维护的注释：切换后必须原样保留
 model = "gpt-5"
 approval_policy = "on-request"
+
+[profile.fast]
+# profile 内注释
+model = "gpt-5-mini"
+model_reasoning_effort = "low"
 ```
 `tmp-selftest/home/.codex/auth.json`：
 ```json
@@ -161,15 +185,26 @@ approval_policy = "on-request"
 10. **CDP 触发页面刷新用 `Page.reload` 命令**，不要用 `Runtime.evaluate('location.reload()')`——后者可能被静默吞掉（表现为"改了设置但截图没变"，2026-10-29 实测）。另外 `await` 一个 reload 的 evaluate 会因上下文销毁永久挂死；测试脚本里所有 CDP send 都要带超时。
 11. **electron-updater 动态导入的 ESM-CJS 互操作**（v0.5.0 用户实测踩坑）：`const { autoUpdater } = await import('electron-updater')` 在某些 Node/打包形态下命名导出探测失败 → autoUpdater 为 undefined。必须兼容两种形态：`mod.autoUpdater ?? mod.default?.autoUpdater`，加载失败时报出 `Object.keys(mod)` 便于定位（修复见 `updater.ts getAutoUpdater`）。
 12. **自测不参与单实例锁**：`--selftest` 模式跳过 `requestSingleInstanceLock`（用户开着已安装应用时，自测曾被锁静默退出——exit 0 但什么都没跑）。同理：**杀测试实例必须按命令行路径精确匹配**（PowerShell 过滤 `CommandLine -like '*win-unpacked*'`），全局 taskkill 会误杀用户正在运行的应用。
+13. **恢复备份前先读源内容再生成新备份**：restoreBackup 里的「恢复前再备份一份」会触发 prune（保留 10 份），源文件恰好是最旧一份时会被先删掉 → ENOENT（2026-10-30 自测抓到）。claude.ts / codex.ts 都已改为先 `readFile(src)` 再 backup。
+14. **HTTP 响应头值不能含非 ASCII**：路由的 `x-ccsl-provider` 带中文供应商名会直接抛 `Invalid character in header content`，必须 `encodeURIComponent`（2026-10-30 自测抓到）。
+15. **CCP/CDP 模拟暗色主题对「显式主题」无效**：应用主题由 store.settings.theme 决定（light 时 matchMedia 模拟被忽略），可视化测试想拍暗色直接用 CDP 把设置页 select 切到 dark，别依赖 `Emulation.setEmulatedMedia`。
+16. **预设数据是生成的**：`src/main/presets-data.ts` 由 `scripts/extract-presets.mjs` 从 cc-switch 仓库（MIT）生成；刷新预设 = 重新下载上游两个 preset 文件后重跑该脚本，**不要手改生成文件**。上游数据是 TS 对象：剥离 import（含多行）→ esbuild 转 CJS → require。
+17. **单实例锁对显式 `CCS_DATA_DIR` 实例豁免**（v0.6.0 起）：测试实例与用户实例数据目录不同，锁会误杀测试启动；与 `--selftest` 豁免同理，都是环境变量门控。
 13. **本地模拟更新服务器验证更新链路**（发布新版本前的推荐验证法）：构建新版安装包 → 把 `latest.yml` + 连字符命名的安装包/blockmap 放进一个静态目录（**注意 latest.yml 里的文件名是连字符形态，本地构建产物是空格形态，文件名必须对齐**）→ `node http` 起静态服务 → 把测试用 win-unpacked 的 `resources/app-update.yml` 改为 `provider: generic; url: http://localhost:<port>` → CDP 自动点击 检查→下载→安装 → 注册表确认版本真实升级。模拟器脚本模式参考会话历史（update-server.mjs + e2e-update.mjs）。
 
-## 9. 路线图（用户已认可的优先级）
+## 9. 路线图（2026-10-30 用户拍板后更新）
 
-1. 主密码加密存储 API Key（用户关心安全，此为最痛需求）
-2. 用量统计（扫描 `~/.claude/projects` 会话日志；格式会变，要做容错）
-3. 本地路由/故障转移（原版聚合模式；工程量大，单独规划）
-4. Gemini CLI / OpenCode 等更多工具；MCP 管理；多语言
-5. 发布后事项：README 补 Release 下载链接与真实开源地址；考虑让用户申请代码签名证书
+目标：功能实现上与 cc-switch v4.0.21 完全相似（分多版），设计延续现有 LexBench 风格。
+
+1. **v0.7.0 候选：路由协议转换**（v0.6.0 只有透传+故障转移）——Anthropic↔OpenAI Chat Completions 互转（含 SSE 流式），让 Claude Code 用 GPT、Codex 用 Claude；参考 cc-switch `src-tauri/src/proxy/`。**工程量大，单独规划并充分测试**。
+2. 聚合模式（多家供应商的模型进同一个模型选择器，按模型分发）。
+3. 会话阅读器（v0.6.0 拍板时被用户放进「核心包+阅读器」之外，属下一批）：解析会话 JSONL 成阅读页；用量扫描已打好解析基础。
+4. MCP 管理 / Skills / 提示词（cc-switch 的统一面板 + 按工具同步）。
+5. 主密码加密存储 API Key（用户最痛安全需求，一直排着）。
+6. 更多工具支持（Gemini CLI 优先，其余 12 工具清单见 cc-switch README）；多语言。
+7. 额度/余额显示（各家中转接口不统一，优先级靠后）。
+8. **不做**：WebDAV/S3 云同步（2026-10-30 用户拍板——原版把含 Key 配置明文传网盘，与"Key 绝不上传"铁律冲突；已用加密备份文件替代）。
+9. 发布后事项：考虑让用户申请代码签名证书。
 
 ## 9.5 视觉规范（v0.2.0 定稿，改样式前必读）
 
@@ -190,10 +225,13 @@ approval_policy = "on-request"
 > 额外边界：**读取用户真实数据文件（哪怕只读诊断）也需先经用户明确授权**——本项目的
 > `%APPDATA%/cc-switch-local/providers.json` 是用户敏感数据，agent 不得未经授权读取或修改。
 
-- **全库唯一主动网络出口**：`src/main/test.ts` 的连接测试（用户点击"测试"按钮才发起，目标是用户自己填写的端点——把该供应商的 Key 发给该端点即功能本身）。
+- **全库主动网络出口**（仅两处）：
+  1. `src/main/test.ts` 的连接测试（用户点击"测试"按钮才发起，目标是用户自己填写的端点——把该供应商的 Key 发给该端点即功能本身）。
+  2. `src/main/router.ts` 的本机路由（用户开启路由后才监听 `127.0.0.1`，转发目标是**用户自己配置的供应商端点**；客户端配置里只落占位 Key）。零遥测、零第三方上传的性质不变。
 - **electron-updater**：仅访问 GitHub Releases 元数据/安装包（更新功能），不携带任何用户数据。
 - **零遥测、零日志**：全库无 console 输出；`dependencies` 仅 3 个（@iarna/toml、electron-updater、misans），无任何分析/上报组件。
 - **开发/用户环境结构性隔离**：`store.ts dataDir()` 在未打包模式自动使用 `userData + "-dev"`，`npm run dev` **永远碰不到**已安装应用的数据；测试性启动（跑打包产物做验证）**必须**设置 `CCS_DATA_DIR` + `CCS_HOME_OVERRIDE` 指向临时目录。
+- **加密备份不触网**（v0.6.0）：跨设备迁移走 AES-256-GCM 加密文件手动拷贝（用户拍板不做 WebDAV/S3 云同步——原版 cc-switch 的云同步把含 Key 的配置明文传网盘，与本项目铁律冲突）。
 - **cc-switch 导入去重**（v0.3.1）：导入前与现有库按 `baseUrl|apiKey` 去重，重复点击不会堆积（此前用户真实数据出现同一批 10 条被导入 8 遍——用户数据文件未动，待用户自行决定是否清理）。
 - **更新链路完整化**（v0.5.0）：检查（手动+启动静默）→ 应用内下载（进度事件推给渲染层横幅）→ `quitAndInstall` 一键安装；`autoDownload` 始终 false，下载必须用户触发。GitHub 不可达时报错并提供建议 + 「打开发布页」兜底（Releases 地址在 `src/shared/constants.ts`，属主账号已登记门禁白名单）。
 - **卸载即清空数据**（v0.5.0，用户要求）：electron-builder `nsis.deleteAppDataOnUninstall: true`——卸载删除 `%APPDATA%/cc-switch-local`（含全部 Key）。**升级安装不受影响**。README 有显著警示。

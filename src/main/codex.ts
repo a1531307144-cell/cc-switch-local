@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import TOML from '@iarna/toml'
 import { atomicWrite } from './store'
+import { routerPort } from './router'
 import { homeDir, maskKey, stamp } from './claude'
 import type { BackupInfo, Provider, SwitchResult, ToolStatus } from '../shared/types'
 
@@ -40,16 +41,113 @@ async function backupFile(dir: string, name: string): Promise<string | null> {
   return bak
 }
 
+/** TOML 基本字符串转义 */
+function tomlStr(v: string): string {
+  return `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
+function isSectionHeader(line: string): boolean {
+  const t = line.trim()
+  return t.startsWith('[') && t.endsWith(']')
+}
+
+/** 顶层裸键赋值行：key = value（不含点号、不在任何 section 内） */
+function topKeyValue(line: string, key: string): boolean {
+  return new RegExp(`^\\s*${key}\\s*=`).test(line)
+}
+
+/** 找到 [model_providers.ccsl] 块的行区间 [start, end)（end 不含） */
+function findSectionBlock(lines: string[], header: string): [number, number] | null {
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === header) {
+      let end = lines.length
+      for (let j = i + 1; j < lines.length; j++) {
+        if (isSectionHeader(lines[j])) {
+          end = j
+          break
+        }
+      }
+      return [i, end]
+    }
+  }
+  return null
+}
+
 /**
- * provider 为 null 表示「恢复官方配置」：移除我们写入的 model_provider 段。
- * 注意：TOML 解析-重写会丢失注释，写入前自动备份。
+ * 关键字段替换写入（对齐原版 cc-switch 的做法）：
+ * 只替换/追加我们拥有的键（model_provider、model、[model_providers.ccsl]），
+ * 其余行——包括注释、顺序、其他供应商段——逐字节保留。
+ * 写入前用完整 TOML 解析校验结果，解析失败即中止，绝不写坏用户文件。
  */
-export async function switchCodex(provider: Provider | null): Promise<SwitchResult> {
+function applySurgicalEdit(original: string, provider: Provider | null, viaRouter = false): string {
+  const eol = original.includes('\r\n') ? '\r\n' : '\n'
+  let lines = original.length ? original.split(/\r?\n/) : []
+  if (lines.length && lines[lines.length - 1] === '') lines.pop()
+
+  const HEADER = `[model_providers.${SECTION}]`
+
   if (provider) {
-    if (!/^https?:\/\//i.test(provider.baseUrl)) {
+    // 1) [model_providers.ccsl] 段：存在则整块替换，否则追加到文件末尾
+    const baseUrl = viaRouter ? `http://127.0.0.1:${routerPort()}/codex` : provider.baseUrl
+    const block = [
+      HEADER,
+      `name = ${tomlStr(provider.name)}`,
+      `base_url = ${tomlStr(baseUrl)}`,
+      `wire_api = ${tomlStr(provider.wireApi ?? 'responses')}`,
+      'requires_openai_auth = true'
+    ]
+    const existing = findSectionBlock(lines, HEADER)
+    if (existing) {
+      lines.splice(existing[0], existing[1] - existing[0], ...block)
+    } else {
+      if (lines.length && lines[lines.length - 1].trim() !== '') lines.push('')
+      lines.push(...block)
+    }
+
+    // 2) 顶层 model_provider / model：有则原地替换，无则插到首个 section 之前
+    const insertAt = (() => {
+      const idx = lines.findIndex((l) => isSectionHeader(l))
+      return idx === -1 ? lines.length : idx
+    })()
+    const upsertTop = (key: string, value: string) => {
+      const topIdx = lines.findIndex((l, i) => i < insertAt + 1 && topKeyValue(l, key))
+      const line = `${key} = ${tomlStr(value)}`
+      if (topIdx >= 0 && topIdx < insertAt + 1) lines[topIdx] = line
+      else lines.splice(insertAt, 0, line)
+    }
+    upsertTop('model_provider', SECTION)
+    if (provider.model) upsertTop('model', provider.model)
+  } else {
+    // 恢复官方：仅移除我们写入的 model_provider 行与 ccsl 段（model 留给用户）
+    lines = removeSection(lines, HEADER)
+    const mpIdx = lines.findIndex((l) => topKeyValue(l, 'model_provider'))
+    if (mpIdx >= 0 && lines[mpIdx].trim() === `model_provider = ${tomlStr(SECTION)}`) {
+      lines.splice(mpIdx, 1)
+    }
+  }
+  return lines.join(eol) + (lines.length ? eol : '')
+}
+
+/** 删除指定 header 段的块体（header 行已单独移除时也能正确处理剩余行） */
+function removeSection(lines: string[], header: string): string[] {
+  const block = findSectionBlock(lines, header)
+  if (!block) return lines
+  const out = [...lines]
+  out.splice(block[0], block[1] - block[0])
+  return out
+}
+
+/**
+ * provider 为 null 表示「恢复官方配置」：只移除我们写入的键。
+ * 行级手术式编辑：注释、键顺序、其他配置段全部保留；写入前自动备份。
+ * viaRouter=true 时 base_url 指向本机路由，auth.json 里只放占位 Key。
+ */
+export async function switchCodex(provider: Provider | null, viaRouter = false): Promise<SwitchResult> {
+  if (provider) {
+    if (!viaRouter && !/^https?:\/\//i.test(provider.baseUrl)) {
       throw new Error(`非法的 Base URL（仅允许 http/https）：${provider.baseUrl}`)
     }
-    if (!provider.apiKey) throw new Error('API Key 不能为空')
+    if (!viaRouter && !provider.apiKey) throw new Error('API Key 不能为空')
   }
   await fsp.mkdir(codexDir(), { recursive: true })
   const backups: string[] = []
@@ -58,34 +156,18 @@ export async function switchCodex(provider: Provider | null): Promise<SwitchResu
     if (bak) backups.push(bak)
   }
 
-  let cfg: Record<string, unknown> = {}
-  try {
-    cfg = TOML.parse(await fsp.readFile(codexConfigPath(), 'utf8')) as Record<string, unknown>
-  } catch (e) {
-    if (fs.existsSync(codexConfigPath())) {
-      throw new Error(`config.toml 解析失败：${(e as Error).message}（已中止，不会写入）`)
-    }
-  }
+  const original = fs.existsSync(codexConfigPath())
+    ? await fsp.readFile(codexConfigPath(), 'utf8')
+    : ''
+  const nextText = applySurgicalEdit(original, provider, viaRouter)
 
-  if (provider) {
-    cfg.model_provider = SECTION
-    if (provider.model) cfg.model = provider.model
-    const mps = { ...((cfg.model_providers as Record<string, unknown>) ?? {}) }
-    mps[SECTION] = {
-      name: provider.name,
-      base_url: provider.baseUrl,
-      wire_api: provider.wireApi ?? 'responses',
-      requires_openai_auth: true
-    }
-    cfg.model_providers = mps
-  } else {
-    delete cfg.model_provider
-    const mps = { ...((cfg.model_providers as Record<string, unknown>) ?? {}) }
-    delete mps[SECTION]
-    if (Object.keys(mps).length) cfg.model_providers = mps
-    else delete cfg.model_providers
+  // 写入前完整解析校验：手术编辑若产生非法 TOML，立即中止，绝不落盘
+  try {
+    TOML.parse(nextText)
+  } catch (e) {
+    throw new Error(`写入校验失败（已中止，不会写入）：${(e as Error).message}`)
   }
-  await atomicWrite(codexConfigPath(), TOML.stringify(cfg as TOML.JsonMap))
+  await atomicWrite(codexConfigPath(), nextText)
 
   const files = [codexConfigPath()]
   if (provider) {
@@ -95,7 +177,7 @@ export async function switchCodex(provider: Provider | null): Promise<SwitchResu
     } catch {
       auth = {}
     }
-    auth.OPENAI_API_KEY = provider.apiKey
+    auth.OPENAI_API_KEY = viaRouter ? 'ccsl-local-router' : provider.apiKey
     await atomicWrite(codexAuthPath(), JSON.stringify(auth, null, 2))
     files.push(codexAuthPath())
   }
@@ -187,7 +269,9 @@ export async function restoreBackup(file: string): Promise<SwitchResult> {
   const src = path.join(codexDir(), file)
   if (!fs.existsSync(src)) throw new Error('备份文件不存在')
   const target = file.replace(/\.bak-\d{8}-\d{6}(?:-\d+)?$/, '')
+  // 先读源内容再备份：prune 可能在备份过程中删掉最旧的源文件（同 claude.ts）
+  const content = await fsp.readFile(src)
   const backup = await backupFile(codexDir(), target)
-  await fsp.copyFile(src, path.join(codexDir(), target))
+  await fsp.writeFile(path.join(codexDir(), target), content)
   return { ok: true, files: [path.join(codexDir(), target)], backup: backup ?? undefined }
 }

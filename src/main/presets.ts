@@ -1,14 +1,13 @@
 import type { Preset } from '../shared/types'
+import { GENERATED_PRESETS } from './presets-data'
 
-/**
- * 内置预设仅收录官方公开文档明确给出 Anthropic 兼容端点的服务商，仅供参考，
- * 以各服务商官方文档为准；不在列表里的服务商走「自定义」。
- */
-export const PRESETS: Preset[] = [
+/** 精选预设（官方与常用国内厂商，中文名优先展示） */
+const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: 'Anthropic 官方（API 计费）',
     baseUrl: 'https://api.anthropic.com',
+    keyType: 'api_key',
     notes: '官方 API；Key 类型选 api_key。订阅登录用户无需配置此项'
   },
   {
@@ -47,3 +46,25 @@ export const PRESETS: Preset[] = [
     notes: '官方 API；如用 ChatGPT 订阅登录，请用「恢复官方配置」'
   }
 ]
+
+function withSearchKey(p: Preset): Preset {
+  if (p.searchKey) return p
+  const domain = (() => {
+    try {
+      return new URL(p.baseUrl).hostname
+    } catch {
+      return ''
+    }
+  })()
+  return { ...p, searchKey: `${p.name} ${domain}`.toLowerCase() }
+}
+
+const seen = new Set<string>()
+/** 精选在前（同端点不重复收录生成数据） */
+export const PRESETS: Preset[] = [...CURATED_PRESETS, ...GENERATED_PRESETS].flatMap((p) => {
+  const fixed = withSearchKey(p)
+  const key = `${p.tool}|${p.baseUrl.replace(/\/+$/, '').toLowerCase()}`
+  if (seen.has(key)) return []
+  seen.add(key)
+  return [fixed]
+})
