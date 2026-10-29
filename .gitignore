@@ -4,6 +4,7 @@ release/
 tmp-selftest/
 tmp-visual/
 tmp-e2e/
+session-*.md
 .zcode/
 .claude/
 .agents/
