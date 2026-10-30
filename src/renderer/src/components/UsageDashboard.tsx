@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { UsageDay, UsageStats } from '../../../shared/types'
+import type { Lang, UsageDay, UsageStats } from '../../../shared/types'
+import { t } from '../../../shared/i18n'
 
 function fmtTokens(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`
@@ -24,7 +25,7 @@ function fmtTime(ts: number): string {
 const TOOL_LABEL: Record<string, string> = { claude: 'Claude', codex: 'Codex' }
 
 /** GitHub 风格 53 周热力图：颜色档位按当日请求数 */
-function Heatmap({ days }: { days: UsageDay[] }) {
+function Heatmap({ days, lang }: { days: UsageDay[]; lang: Lang }) {
   const byDate = new Map(days.map((d) => [d.date, d]))
   const cells: { date: string; requests: number; cost: number }[] = []
   const today = new Date()
@@ -54,18 +55,18 @@ function Heatmap({ days }: { days: UsageDay[] }) {
               <div
                 key={c.date}
                 className={`heatmap-cell lv${level(c.requests)}`}
-                title={`${c.date}：${c.requests} 次请求，${fmtCost(c.cost)}`}
+                title={`${c.date}: ${c.requests}, ${fmtCost(c.cost)}`}
               />
             ))}
           </div>
         ))}
       </div>
       <div className="heatmap-legend muted small">
-        <span>少</span>
+        <span>{t(lang, 'usage.less')}</span>
         {[0, 1, 2, 3, 4].map((l) => (
           <span key={l} className={`heatmap-cell lv${l}`} />
         ))}
-        <span>多（按请求次数）</span>
+        <span>{t(lang, 'usage.more')}</span>
       </div>
     </div>
   )
@@ -80,12 +81,12 @@ function Trend({ days }: { days: UsageDay[] }) {
   const H = 120
   const bw = W / slice.length
   return (
-    <svg className="trend" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="最近 30 天请求趋势">
+    <svg className="trend" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="trend">
       {slice.map((d, i) => {
         const h = (d.requests / max) * (H - 18)
         return (
           <g key={d.date}>
-            <title>{`${d.date}：${d.requests} 次请求，${fmtCost(d.cost)}`}</title>
+            <title>{`${d.date}: ${d.requests}, ${fmtCost(d.cost)}`}</title>
             <rect x={i * bw + bw * 0.15} y={H - h} width={bw * 0.7} height={h} rx={2} className="trend-bar" />
           </g>
         )
@@ -94,7 +95,7 @@ function Trend({ days }: { days: UsageDay[] }) {
   )
 }
 
-export default function UsageDashboard({ notify }: { notify: (text: string, kind?: 'ok' | 'err') => void }) {
+export default function UsageDashboard({ lang, notify }: { lang: Lang; notify: (text: string, kind?: 'ok' | 'err') => void }) {
   const [stats, setStats] = useState<UsageStats | null>(null)
   const [scanning, setScanning] = useState(false)
 
@@ -103,11 +104,11 @@ export default function UsageDashboard({ notify }: { notify: (text: string, kind
     try {
       setStats(await window.api.usageGet())
     } catch (e) {
-      notify(`用量扫描失败：${(e as Error).message}`, 'err')
+      notify(t(lang, 'usage.scanFail', { msg: (e as Error).message }), 'err')
     } finally {
       setScanning(false)
     }
-  }, [notify])
+  }, [lang, notify])
 
   useEffect(() => {
     void scan()
@@ -116,75 +117,73 @@ export default function UsageDashboard({ notify }: { notify: (text: string, kind
   if (!stats) {
     return (
       <div className="usage">
-        <p className="muted">{scanning ? '正在扫描本地会话日志…' : '暂无数据'}</p>
+        <p className="muted">{scanning ? t(lang, 'usage.scanning') : t(lang, 'usage.none')}</p>
       </div>
     )
   }
 
-  const t = stats.totals
-  const cacheHitRate = t.input + t.cacheRead > 0 ? Math.round((t.cacheRead / (t.input + t.cacheRead)) * 100) : 0
+  const total = stats.totals
+  const cacheHitRate = total.input + total.cacheRead > 0 ? Math.round((total.cacheRead / (total.input + total.cacheRead)) * 100) : 0
 
   return (
     <div className="usage">
       <div className="usage-head">
         <div>
-          <h2>用量统计</h2>
-          <p className="muted small">
-            来自本机会话日志（Claude Code / Codex），花费为按模型单价的估算值；扫描 {stats.scannedFiles} 个文件用时 {stats.scanMs}ms
-          </p>
+          <h2>{t(lang, 'usage.title')}</h2>
+          <p className="muted small">{t(lang, 'usage.desc', { files: stats.scannedFiles, ms: stats.scanMs })}</p>
         </div>
         <button className="btn sm" onClick={() => void scan()} disabled={scanning}>
-          {scanning ? '扫描中…' : '重新扫描'}
+          {scanning ? t(lang, 'usage.scanning') : t(lang, 'usage.rescan')}
         </button>
       </div>
 
       <div className="usage-cards">
         <div className="stat-card">
-          <div className="stat-num">{t.requests.toLocaleString()}</div>
-          <div className="stat-label">总请求</div>
+          <div className="stat-num">{total.requests.toLocaleString()}</div>
+          <div className="stat-label">{t(lang, 'usage.requests')}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-num">{fmtTokens(t.input + t.cacheRead)}</div>
-          <div className="stat-label">输入 Token（含缓存读 {fmtTokens(t.cacheRead)}）</div>
+          <div className="stat-num">{fmtTokens(total.input + total.cacheRead)}</div>
+          <div className="stat-label">{t(lang, 'usage.input', { n: fmtTokens(total.cacheRead) })}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-num">{fmtTokens(t.output)}</div>
-          <div className="stat-label">输出 Token</div>
+          <div className="stat-num">{fmtTokens(total.output)}</div>
+          <div className="stat-label">{t(lang, 'usage.output')}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-num">{fmtCost(t.cost)}</div>
-          <div className="stat-label">估算花费</div>
+          <div className="stat-num">{fmtCost(total.cost)}</div>
+          <div className="stat-label">{t(lang, 'usage.cost')}</div>
         </div>
         <div className="stat-card">
           <div className="stat-num">{cacheHitRate}%</div>
-          <div className="stat-label">缓存命中率</div>
+          <div className="stat-label">{t(lang, 'usage.cacheRate')}</div>
         </div>
       </div>
 
       <section className="card">
-        <h3>全年活跃度</h3>
-        <Heatmap days={stats.days} />
+        <h3>{t(lang, 'usage.heatmap')}</h3>
+        <Heatmap days={stats.days} lang={lang} />
       </section>
 
       <section className="card">
-        <h3>最近 30 天请求趋势</h3>
+        <h3>{t(lang, 'usage.trend')}</h3>
         <Trend days={stats.days} />
       </section>
 
       <section className="card">
-        <h3>按模型</h3>
+        <h3>{t(lang, 'usage.byModel')}</h3>
         {stats.models.length === 0 ? (
-          <p className="muted small">暂无记录</p>
+          <p className="muted small">{t(lang, 'usage.noRecords')}</p>
         ) : (
           <table className="backup-table">
             <thead>
               <tr>
-                <th>模型</th>
-                <th>工具</th>
-                <th>请求</th>
-                <th>输入</th>
-                <th>输出</th>
-                <th>估算花费</th>
+                <th>{t(lang, 'th.model')}</th>
+                <th>{t(lang, 'th.tool')}</th>
+                <th>{t(lang, 'th.requests')}</th>
+                <th>{t(lang, 'th.input')}</th>
+                <th>{t(lang, 'th.output')}</th>
+                <th>{t(lang, 'th.cost')}</th>
               </tr>
             </thead>
             <tbody>
@@ -206,20 +205,20 @@ export default function UsageDashboard({ notify }: { notify: (text: string, kind
       </section>
 
       <section className="card">
-        <h3>最近请求</h3>
+        <h3>{t(lang, 'usage.recent')}</h3>
         {stats.recent.length === 0 ? (
-          <p className="muted small">暂无记录</p>
+          <p className="muted small">{t(lang, 'usage.noRecords')}</p>
         ) : (
           <table className="backup-table">
             <thead>
               <tr>
-                <th>时间</th>
-                <th>工具</th>
-                <th>模型</th>
-                <th>输入</th>
-                <th>输出</th>
-                <th>缓存读</th>
-                <th>估算</th>
+                <th>{t(lang, 'th.time')}</th>
+                <th>{t(lang, 'th.tool')}</th>
+                <th>{t(lang, 'th.model')}</th>
+                <th>{t(lang, 'th.input')}</th>
+                <th>{t(lang, 'th.output')}</th>
+                <th>{t(lang, 'th.cacheRead')}</th>
+                <th>{t(lang, 'th.cost')}</th>
               </tr>
             </thead>
             <tbody>

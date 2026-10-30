@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoUpdate: true,
   autoStart: false,
   theme: 'system',
+  language: 'zh',
   router: { claude: false, codex: false }
 }
 
@@ -43,6 +44,7 @@ export function loadStore(): StoreShape {
       settings: {
         ...DEFAULT_SETTINGS,
         ...(parsed.settings ?? {}),
+        language: parsed.settings?.language === 'en' ? 'en' : 'zh',
         router: {
           claude: parsed.settings?.router?.claude ?? DEFAULT_SETTINGS.router!.claude,
           codex: parsed.settings?.router?.codex ?? DEFAULT_SETTINGS.router!.codex,

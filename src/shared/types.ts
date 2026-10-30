@@ -1,6 +1,7 @@
 export type ToolId = 'claude' | 'codex'
 export type KeyType = 'auth_token' | 'api_key'
 export type ThemeMode = 'system' | 'light' | 'dark'
+export type Lang = 'zh' | 'en'
 
 export interface Provider {
   id: string
@@ -35,6 +36,8 @@ export interface AppSettings {
   autoUpdate: boolean
   autoStart: boolean
   theme: ThemeMode
+  /** 界面语言（v0.7.0 起；缺省 zh） */
+  language?: Lang
   /** 本机路由模式（每工具独立开关；port 缺省 15721；缺省 false） */
   router?: { claude: boolean; codex: boolean; port?: number }
 }
@@ -45,6 +48,20 @@ export interface RouterStatus {
   error?: string
   claude: { enabled: boolean; requests: number; errors: number }
   codex: { enabled: boolean; requests: number; errors: number }
+}
+
+export interface BalanceResult {
+  ok: boolean
+  balance?: number
+  currency?: string
+  message?: string
+}
+
+/** ccsl:// 深链解析结果（链接永不携带 API Key） */
+export interface DeeplinkResult {
+  ok: boolean
+  input?: Omit<ProviderInput, 'apiKey'>
+  error?: string
 }
 
 export interface StoreShape {
@@ -168,6 +185,9 @@ export interface Api {
   usageGet(): Promise<UsageStats>
   routerStatus(): Promise<RouterStatus>
   routerSet(tool: ToolId, enabled: boolean): Promise<RouterStatus>
+  balanceGet(input: { baseUrl: string; apiKey: string }): Promise<BalanceResult>
+  clearAllData(): Promise<{ removed: string[] }>
+  onDeeplinkProvider(cb: (r: DeeplinkResult) => void): () => void
   settingsUpdate(patch: Partial<AppSettings>): Promise<AppSettings>
   openPath(kind: 'data' | 'claudeConfig' | 'codexConfig'): Promise<void>
   appVersion(): Promise<string>

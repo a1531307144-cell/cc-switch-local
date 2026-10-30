@@ -943,3 +943,15 @@ code {
   fill: var(--accent);
   opacity: 0.85;
 }
+
+/* ---------- 数据危险区 / 复制链接 ---------- */
+.danger-zone {
+  border: 1px solid color-mix(in srgb, var(--err) 35%, var(--line));
+}
+
+.copy-link {
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--muted);
+}

@@ -9,6 +9,9 @@ import { importFromCcSwitch } from './importer'
 import { backupExport, backupImport } from './backup'
 import { usageStats } from './usage'
 import { routerEnabled, routerStatus, startRouter, stopRouter } from './router'
+import { fetchBalance } from './balance'
+import { clearAppData } from './cleardata'
+import { findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
 import { PRESETS } from './presets'
 import { registerUpdateIpc, startupCheck } from './updater'
 import { createTray, refreshTray } from './tray'
@@ -91,6 +94,16 @@ function createWindow(theme: ThemeMode = 'system'): void {
 
 // 关窗 = 驻留托盘；只有托盘菜单「退出」或系统关机才真正退出
 let quitting = false
+
+/** 把深链发给渲染层（窗口未就绪时等加载完成再发一次） */
+function deliverDeeplink(raw: string): void {
+  const parsed = parseProviderDeeplink(raw)
+  const send = () => win?.webContents.send('deeplink:provider', parsed)
+  if (win) {
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+    else send()
+  }
+}
 
 function showMainWindow(): void {
   if (!win) {
@@ -231,6 +244,34 @@ function registerIpc(): void {
 
   ipcMain.handle('router:status', () => routerStatus())
 
+  ipcMain.handle('balance:get', (_e, input: { baseUrl: string; apiKey: string }) => {
+    if (!input || !isStr(input.baseUrl) || !/^https?:\/\//i.test(input.baseUrl) || input.baseUrl.length > 2000) {
+      throw new Error('非法的 Base URL')
+    }
+    if (!isStr(input.apiKey) || !input.apiKey || input.apiKey.length > 4000) throw new Error('非法的 API Key')
+    return fetchBalance(input.baseUrl, input.apiKey)
+  })
+
+  ipcMain.handle('data:clearAll', async () => {
+    // 1) 两个工具先恢复官方状态（移除我们写入的键；本来没接管就跳过写盘）
+    for (const tool of ['claude', 'codex'] as ToolId[]) {
+      if (loadStore().current[tool]) {
+        if (tool === 'claude') await claude.switchClaude(null)
+        else await codex.switchCodex(null)
+      }
+    }
+    // 2) 停路由、清数据、刷托盘
+    stopRouter()
+    const r = await clearAppData()
+    refreshTray()
+    return r
+  })
+
+  ipcMain.handle('deeplink:parse', (_e, raw: string) => {
+    if (!isStr(raw) || raw.length > 4000) return { ok: false, error: '链接非法或过长' }
+    return parseProviderDeeplink(raw)
+  })
+
   ipcMain.handle('router:set', async (_e, tool: ToolId, enabled: boolean) => {
     if (!(tool === 'claude' || tool === 'codex')) throw new Error('非法的工具类型')
     if (typeof enabled !== 'boolean') throw new Error('非法的开关值')
@@ -256,10 +297,14 @@ function registerIpc(): void {
 
   ipcMain.handle('settings:update', async (_e, patch: Partial<AppSettings>) => {
     const store = loadStore()
+    if (patch.language !== undefined && patch.language !== 'zh' && patch.language !== 'en') {
+      throw new Error('非法的语言')
+    }
     store.settings = { ...store.settings, ...patch }
     await saveStore(store)
     applySettings(store.settings)
     syncTitleBar(store.settings.theme)
+    refreshTray()
     return store.settings
   })
 
@@ -287,7 +332,10 @@ const gotLock = SELFTEST || process.env.CCS_DATA_DIR || app.requestSingleInstanc
 if (!gotLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_e, argv) => {
+    // Windows 上点 ccsl:// 链接会启动第二个实例并由这里转交
+    const link = findDeeplinkInArgv(argv)
+    if (link) deliverDeeplink(link)
     if (win) {
       if (win.isMinimized()) win.restore()
       win.focus()
@@ -300,9 +348,20 @@ if (!gotLock) {
       await runSelfTest()
       return
     }
+    // 注册 ccsl:// 深链协议（仅打包实例写注册表；dev/测试实例不污染系统）
+    if (app.isPackaged) {
+      try {
+        app.setAsDefaultProtocolClient('ccsl')
+      } catch {
+        /* 注册失败不影响其他功能 */
+      }
+    }
     const store = loadStore()
     applySettings(store.settings)
     createWindow(store.settings.theme)
+    // 冷启动带深链（Windows 把链接作为 argv 传进来）
+    const coldLink = findDeeplinkInArgv(process.argv)
+    if (coldLink) deliverDeeplink(coldLink)
     createTray(showMainWindow)
     // 上次会话开启了路由模式 → 直接拉起代理（配置文件仍指向本机路由）
     const rs = loadStore().settings.router

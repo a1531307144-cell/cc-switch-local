@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Provider, RouterStatus, StoreShape, ToolId, ToolStatus } from '../../shared/types'
+import type { DeeplinkResult, Lang, Provider, RouterStatus, StoreShape, ToolId, ToolStatus } from '../../shared/types'
+import { t } from '../../shared/i18n'
 import ProviderCard from './components/ProviderCard'
 import ProviderForm, { emptyDraft, type FormDraft } from './components/ProviderForm'
 import SettingsPanel from './components/SettingsPanel'
@@ -32,6 +33,9 @@ export default function App() {
   const [updateBytes, setUpdateBytes] = useState<{ transferred: number; total: number; bps: number } | null>(null)
   const [updateError, setUpdateError] = useState('')
 
+  const lang: Lang = store?.settings.language === 'en' ? 'en' : 'zh'
+  const tr = useCallback((key: Parameters<typeof t>[1], vars?: Record<string, string | number>) => t(lang, key, vars), [lang])
+
   const fmtMB = (n: number): string => `${(n / 1048576).toFixed(1)} MB`
 
   const toastTimer = useRef<number | undefined>(undefined)
@@ -54,10 +58,10 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    refresh().catch(() => notify('初始化失败', 'err'))
+    refresh().catch(() => notify(t('zh', 'app.initFail'), 'err'))
   }, [refresh, notify])
 
-  // 更新事件（启动静默检查发现新版 / 下载进度 / 下载完成）
+  // 更新事件（启动静默检查发现新版 / 下载进度 / 下载完成）+ 托盘侧数据变更 + 深链
   useEffect(() => {
     const un1 = window.api.onUpdateAvailable((p) => {
       setUpdateVersion(p.version)
@@ -72,13 +76,33 @@ export default function App() {
     const un4 = window.api.onStoreChanged(() => {
       void refresh()
     })
+    const un5 = window.api.onDeeplinkProvider((r: DeeplinkResult) => {
+      if (r.ok && r.input) {
+        setDraft({
+          ...emptyDraft(r.input.tool),
+          name: r.input.name,
+          baseUrl: r.input.baseUrl,
+          apiKey: '',
+          keyType: r.input.keyType ?? 'auth_token',
+          model: r.input.model ?? '',
+          wireApi: r.input.wireApi ?? 'responses',
+          notes: t(store?.settings.language === 'en' ? 'en' : 'zh', 'form.deeplinkNote')
+        })
+        notify(
+          t(store?.settings.language === 'en' ? 'en' : 'zh', 'deeplink.okToast', { name: r.input.name })
+        )
+      } else {
+        notify(t(store?.settings.language === 'en' ? 'en' : 'zh', 'deeplink.errToast', { msg: r.error ?? '' }), 'err')
+      }
+    })
     return () => {
       un1()
       un2()
       un3()
       un4()
+      un5()
     }
-  }, [refresh])
+  }, [refresh, store?.settings.language])
 
   const runCheck = useCallback(async () => {
     setUpdateState('checking')
@@ -93,12 +117,12 @@ export default function App() {
       setUpdateVersion(r.version)
       setUpdateError('')
       setUpdateState('available')
-      notify(`发现新版本 v${r.version}`)
+      notify(tr('update.foundToast', { v: r.version }))
     } else {
       setUpdateState('idle')
-      notify('已是最新版本')
+      notify(tr('update.latestToast'))
     }
-  }, [notify])
+  }, [notify, tr])
 
   const startDownload = useCallback(async () => {
     setUpdateState('downloading')
@@ -111,7 +135,7 @@ export default function App() {
       setUpdateState('idle')
       notify(r.error, 'err')
     }
-  }, [])
+  }, [notify])
 
   const cancelDownload = useCallback(async () => {
     await window.api.updateCancel()
@@ -131,7 +155,7 @@ export default function App() {
     return () => mq.removeEventListener('change', apply)
   }, [theme])
 
-  if (!store) return <div className="loading">加载中…</div>
+  if (!store) return <div className="loading">{tr('app.loading')}</div>
 
   const toolView = view === 'claude' || view === 'codex'
   const activeTool = toolView ? (view as ToolId) : 'claude'
@@ -144,7 +168,11 @@ export default function App() {
     setBusyTool(tool)
     try {
       await window.api.providerSwitch(tool, p ? p.id : null)
-      notify(p ? `已切换到「${p.name}」。重启 ${TOOL_LABEL[tool]} 会话后生效。` : '已恢复官方登录配置（清除代理键）。')
+      notify(
+        p
+          ? tr('toast.switched', { name: p.name, tool: TOOL_LABEL[tool] })
+          : tr('toast.restoredOfficial')
+      )
       await refresh()
     } catch (e) {
       notify((e as Error).message, 'err')
@@ -153,26 +181,10 @@ export default function App() {
     }
   }
 
-  const toggleRouter = async () => {
-    const enabling = !(routerState?.[activeTool]?.enabled)
-    try {
-      const r = await window.api.routerSet(activeTool, enabling)
-      setRouterState(r)
-      notify(
-        enabling
-          ? '已开启本机路由：重启工具会话后生效；路由模式下切换供应商即时生效，上游故障自动转移'
-          : '已切回直连模式：重启工具会话后生效'
-      )
-      await refresh()
-    } catch (e) {
-      notify((e as Error).message, 'err')
-    }
-  }
-
   const del = async (p: Provider) => {
     try {
       await window.api.providerDelete(p.id)
-      notify(`已删除「${p.name}」`)
+      notify(tr('toast.deleted', { name: p.name }))
       await refresh()
     } catch (e) {
       notify((e as Error).message, 'err')
@@ -191,7 +203,7 @@ export default function App() {
       wireApi: d.wireApi,
       notes: d.notes.trim()
     })
-    notify(d.id ? '已保存' : '已添加')
+    notify(d.id ? tr('toast.saved') : tr('toast.added'))
     setDraft(null)
     await refresh()
   }
@@ -200,18 +212,17 @@ export default function App() {
     try {
       const cur = await window.api.toolImportCurrent(tool)
       if (!cur) {
-        notify(`未在 ${TOOL_LABEL[tool]} 配置中找到可导入的 API 配置`, 'err')
+        notify(`${tr('tool.importCurrent')}：${TOOL_LABEL[tool]} — ${tr('tool.unmanaged')}`, 'err')
         return
       }
       setDraft({
         ...emptyDraft(tool),
-        name: '导入的当前配置',
+        name: 'Imported current config',
         baseUrl: cur.baseUrl,
         apiKey: cur.apiKey,
         keyType: cur.keyType,
         model: cur.model ?? '',
-        wireApi: cur.wireApi ?? 'responses',
-        notes: '由「导入当前配置」生成'
+        wireApi: cur.wireApi ?? 'responses'
       })
     } catch (e) {
       notify((e as Error).message, 'err')
@@ -223,7 +234,7 @@ export default function App() {
     try {
       const rep = await window.api.ccswitchImport()
       if (rep.imported === 0) {
-        notify(`没有需要导入的新供应商。${rep.details.join('；')}`, 'err')
+        notify(tr('toast.importNone', { detail: rep.details.join('；') }), 'err')
         return
       }
       let i = 0
@@ -231,19 +242,31 @@ export default function App() {
         i += 1
         await window.api.providerSave({
           tool: 'claude',
-          name: p.name || `cc-switch 导入 ${i}`,
+          name: p.name || `cc-switch import ${i}`,
           baseUrl: p.baseUrl,
           apiKey: p.apiKey,
           keyType: p.keyType,
-          notes: `迁移自 cc-switch（${p.source}）`
+          notes: `cc-switch (${p.source})`
         })
       }
-      notify(`成功从 cc-switch 导入 ${rep.imported} 条供应商`)
+      notify(tr('toast.imported', { n: rep.imported }))
       await refresh()
     } catch (e) {
       notify((e as Error).message, 'err')
     } finally {
       setImporting(false)
+    }
+  }
+
+  const toggleRouter = async () => {
+    const enabling = !(routerState?.[activeTool]?.enabled)
+    try {
+      const r = await window.api.routerSet(activeTool, enabling)
+      setRouterState(r)
+      notify(enabling ? tr('router.enabledToast') : tr('router.disabledToast'))
+      await refresh()
+    } catch (e) {
+      notify((e as Error).message, 'err')
     }
   }
 
@@ -259,37 +282,37 @@ export default function App() {
           <img className="logo-img" src={logoUrl} alt="" draggable={false} />
           <div>
             <div className="brand-name">CC Switch Local</div>
-            <div className="brand-sub">本地 API 供应商管理</div>
+            <div className="brand-sub">{tr('app.subtitle')}</div>
           </div>
         </div>
-        {TOOLS.map((t) => (
-          <button key={t.id} className={`nav ${view === t.id ? 'active' : ''}`} onClick={() => setView(t.id)}>
-            <span>{t.label}</span>
-            <span className="count">{store.providers.filter((p) => p.tool === t.id).length}</span>
+        {TOOLS.map((tl) => (
+          <button key={tl.id} className={`nav ${view === tl.id ? 'active' : ''}`} onClick={() => setView(tl.id)}>
+            <span>{tl.label}</span>
+            <span className="count">{store.providers.filter((p) => p.tool === tl.id).length}</span>
           </button>
         ))}
         <button className={`nav ${view === 'usage' ? 'active' : ''}`} onClick={() => setView('usage')}>
-          <span>用量统计</span>
+          <span>{tr('side.usage')}</span>
         </button>
         <button className={`nav ${view === 'settings' ? 'active' : ''}`} onClick={() => setView('settings')}>
-          <span>设置</span>
+          <span>{tr('side.settings')}</span>
         </button>
         <div className="sidebar-foot">
-          <p className="muted small">数据仅存本机 · 无遥测</p>
-          <p className="muted small">每次写入前自动备份</p>
+          <p className="muted small">{tr('side.privacy1')}</p>
+          <p className="muted small">{tr('side.privacy2')}</p>
         </div>
       </aside>
 
       <main className="main">
         {updateState === 'available' && (
           <div className="update-banner">
-            <span>发现新版本 v{updateVersion}</span>
+            <span>{tr('update.available', { v: updateVersion })}</span>
             <div className="btn-row">
               <button className="btn primary sm" onClick={startDownload}>
-                立即下载
+                {tr('update.downloadNow')}
               </button>
               <button className="btn ghost sm" onClick={() => setUpdateState('idle')}>
-                稍后
+                {tr('update.later')}
               </button>
             </div>
           </div>
@@ -297,7 +320,7 @@ export default function App() {
         {updateState === 'downloading' && (
           <div className="update-banner">
             <span>
-              正在下载 v{updateVersion}…
+              {tr('update.downloading', { v: updateVersion })}
               {updateBytes ? (
                 <>
                   {' '}
@@ -313,16 +336,16 @@ export default function App() {
                 <div className="update-bar-fill" style={{ width: `${updatePercent}%` }} />
               </div>
               <button className="btn ghost sm" onClick={cancelDownload}>
-                取消
+                {tr('update.later')}
               </button>
             </div>
           </div>
         )}
         {updateState === 'downloaded' && (
           <div className="update-banner">
-            <span>更新已就绪，点击后重启并自动安装</span>
+            <span>{tr('update.ready')}</span>
             <button className="btn primary sm" onClick={() => void window.api.updateInstall()}>
-              重启并安装
+              {tr('update.restartInstall')}
             </button>
           </div>
         )}
@@ -331,10 +354,10 @@ export default function App() {
             <span>{updateError}</span>
             <div className="btn-row">
               <button className="btn sm" onClick={() => void window.api.openReleases()}>
-                打开发布页
+                {tr('update.openReleases')}
               </button>
               <button className="btn ghost sm" onClick={() => setUpdateError('')}>
-                关闭
+                {tr('update.close')}
               </button>
             </div>
           </div>
@@ -344,10 +367,7 @@ export default function App() {
             <div className="toolbar">
               <div>
                 <h2>{TOOL_LABEL[activeTool]}</h2>
-                <p className="muted small">
-                  切换会改写 {activeTool === 'claude' ? '~/.claude/settings.json' : '~/.codex/config.toml 与 auth.json'}
-                  ，其余配置原样保留；重启对应工具会话后生效
-                </p>
+                <p className="muted small">{activeTool === 'claude' ? tr('tool.hint.claude') : tr('tool.hint.codex')}</p>
               </div>
               <div className="btn-row">
                 <button
@@ -355,22 +375,22 @@ export default function App() {
                   onClick={toggleRouter}
                   title={
                     routerState?.running
-                      ? `本机路由运行中（127.0.0.1:${routerState.port}）；${activeTool === 'claude' ? 'Claude' : 'Codex'} 已转发 ${routerState[activeTool].requests} 次，故障转移 ${routerState[activeTool].errors} 次`
-                      : '开启后请求经本机代理转发，支持自动故障转移'
+                      ? tr('router.tipOn', { port: routerState.port, req: routerState[activeTool].requests, err: routerState[activeTool].errors })
+                      : tr('router.tipOff')
                   }
                 >
-                  {routerState?.[activeTool]?.enabled ? '本机路由：开' : '本机路由：关'}
+                  {routerState?.[activeTool]?.enabled ? tr('router.on') : tr('router.off')}
                 </button>
                 <button className="btn sm" onClick={() => importCurrent(activeTool)}>
-                  导入当前配置
+                  {tr('tool.importCurrent')}
                 </button>
                 {activeTool === 'claude' && (
                   <button className="btn sm" onClick={importCcSwitch} disabled={importing}>
-                    {importing ? '导入中…' : '从 cc-switch 导入'}
+                    {importing ? tr('tool.importing') : tr('tool.importCcSwitch')}
                   </button>
                 )}
                 <button className="btn primary sm" onClick={() => setDraft(emptyDraft(activeTool))}>
-                  + 新建供应商
+                  {tr('tool.new')}
                 </button>
               </div>
             </div>
@@ -379,41 +399,44 @@ export default function App() {
               <span>
                 {currentId && currentProvider ? (
                   <>
-                    当前生效：<strong>{currentProvider.name}</strong>（本工具管理）
+                    {tr('tool.statusActive')}
+                    <strong>{currentProvider.name}</strong>
+                    {tr('tool.managed')}
                   </>
                 ) : status[activeTool].currentBaseUrl ? (
-                  <>检测到外部配置：{status[activeTool].currentBaseUrl}</>
+                  <>
+                    {tr('tool.external')}
+                    {status[activeTool].currentBaseUrl}
+                  </>
                 ) : (
-                  <>未接管配置（官方登录或尚未设置）</>
+                  tr('tool.unmanaged')
                 )}
               </span>
               <button className="btn ghost sm" onClick={() => switchTo(null)} disabled={busyTool !== null}>
-                恢复官方配置
+                {tr('tool.restoreOfficial')}
               </button>
             </div>
 
             <div
               className="path-line muted small"
               onClick={() => window.api.openPath(activeTool === 'claude' ? 'claudeConfig' : 'codexConfig')}
-              title="点击打开配置目录"
+              title={tr('tool.configDir', { path: '' })}
             >
-              配置目录：{status[activeTool].configPath || '…'}（点击打开）
+              {tr('tool.configDir', { path: status[activeTool].configPath || '…' })}
             </div>
 
             <div className="list">
               {providers.length === 0 ? (
                 <div className="empty">
-                  <p>还没有 {TOOL_LABEL[activeTool]} 的供应商。</p>
-                  <p className="muted small">
-                    点右上角「+ 新建供应商」添加；已有配置可点「导入当前配置」一键带入；用过原版 cc-switch
-                    的话，「从 cc-switch 导入」可以自动迁移。
-                  </p>
+                  <p>{tr('tool.emptyTitle', { tool: TOOL_LABEL[activeTool] })}</p>
+                  <p className="muted small">{tr('tool.emptyHint')}</p>
                 </div>
               ) : (
                 providers.map((p) => (
                   <ProviderCard
                     key={p.id}
                     provider={p}
+                    lang={lang}
                     isCurrent={p.id === currentId}
                     busy={busyTool === p.tool}
                     onSwitch={switchTo}
@@ -437,13 +460,13 @@ export default function App() {
             </div>
           </>
         )}
-        {view === 'usage' && <UsageDashboard notify={notify} />}
+        {view === 'usage' && <UsageDashboard lang={lang} notify={notify} />}
         {view === 'settings' && (
-          <SettingsPanel store={store} onChanged={refresh} notify={notify} onCheckUpdate={runCheck} updateChecking={updateState === 'checking'} />
+          <SettingsPanel store={store} lang={lang} onChanged={refresh} notify={notify} onCheckUpdate={runCheck} updateChecking={updateState === 'checking'} />
         )}
       </main>
 
-      {draft && <ProviderForm draft={draft} onClose={() => setDraft(null)} onSave={save} />}
+      {draft && <ProviderForm draft={draft} lang={lang} onClose={() => setDraft(null)} onSave={save} />}
       {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
       </div>
     </>

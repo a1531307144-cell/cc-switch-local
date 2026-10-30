@@ -3,6 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { loadStore, saveStore } from './store'
 import { routerEnabled } from './router'
+import { t, type Lang } from '../shared/i18n'
 import * as claude from './claude'
 import * as codex from './codex'
 import type { MenuItemConstructorOptions } from 'electron'
@@ -32,6 +33,8 @@ function notify(body: string): void {
 
 /** 托盘切换走与 IPC 完全相同的切换函数与存储路径 */
 async function switchProvider(tool: ToolId, id: string | null): Promise<void> {
+  const lang = loadStore().settings.language ?? 'zh'
+  const LABEL: Record<ToolId, string> = { claude: 'Claude Code', codex: 'Codex' }
   try {
     const store = loadStore()
     let provider = null
@@ -44,26 +47,34 @@ async function switchProvider(tool: ToolId, id: string | null): Promise<void> {
     store.current[tool] = id
     await saveStore(store)
     refreshTray()
-    notify(provider ? `已切换 ${tool === 'claude' ? 'Claude Code' : 'Codex'} →「${provider.name}」，重启会话后生效` : '已恢复官方配置')
+    notify(
+      provider
+        ? t(lang, 'tray.switched', { tool: LABEL[tool], name: provider.name })
+        : t(lang, 'tray.restored')
+    )
     // 主窗口若开着，实时刷新列表
     for (const w of BrowserWindow.getAllWindows()) {
       w.webContents.send('store:changed')
     }
   } catch (e) {
-    notify(`切换失败：${(e as Error).message}`)
+    notify(t(lang, 'tray.switchFail', { msg: (e as Error).message }))
   }
 }
 
 function buildMenu(): Electron.Menu {
   const store = loadStore()
+  const lang: Lang = store.settings.language ?? 'zh'
   const LABEL: Record<ToolId, string> = { claude: 'Claude Code', codex: 'Codex' }
 
   const toolSection = (tool: ToolId): MenuItemConstructorOptions[] => {
     const providers = store.providers.filter((p) => p.tool === tool).slice(0, 30)
     const cur = store.current[tool]
-    const curName = cur ? (providers.find((p) => p.id === cur)?.name ?? '未知') : null
+    const curName = cur ? (providers.find((p) => p.id === cur)?.name ?? '—') : null
     const items: MenuItemConstructorOptions[] = [
-      { label: `${LABEL[tool]}：${curName ? `当前「${curName}」` : '未接管（官方配置）'}`, enabled: false }
+      {
+        label: `${LABEL[tool]}：${curName ? t(lang, 'tray.current', { name: curName }) : t(lang, 'tray.unmanaged')}`,
+        enabled: false
+      }
     ]
     for (const p of providers) {
       items.push({
@@ -74,9 +85,9 @@ function buildMenu(): Electron.Menu {
       })
     }
     if (providers.length === 0) {
-      items.push({ label: '（暂无供应商，打开主窗口添加）', enabled: false })
+      items.push({ label: t(lang, 'tray.none'), enabled: false })
     }
-    items.push({ label: '恢复官方配置', click: () => void switchProvider(tool, null) })
+    items.push({ label: t(lang, 'tray.restore'), click: () => void switchProvider(tool, null) })
     items.push({ type: 'separator' })
     return items
   }
@@ -85,11 +96,11 @@ function buildMenu(): Electron.Menu {
     ...toolSection('claude'),
     ...toolSection('codex'),
     {
-      label: '显示主窗口',
+      label: t(lang, 'tray.show'),
       click: () => showMainWindow()
     },
     { type: 'separator' },
-    { label: '退出', click: () => app.quit() }
+    { label: t(lang, 'tray.quit'), click: () => app.quit() }
   ])
 }
 
@@ -106,7 +117,7 @@ export function createTray(onShowMainWindow: () => void): void {
   showMainWindow = onShowMainWindow
   const icon = trayIcon()
   tray = icon ? new Tray(icon) : new Tray(nativeImage.createEmpty())
-  tray.setToolTip('CC Switch Local — 本地 API 供应商管理')
+  tray.setToolTip(t(loadStore().settings.language ?? 'zh', 'tray.tooltip'))
   refreshTray()
   tray.on('click', () => showMainWindow())
 }

@@ -7,6 +7,9 @@ import * as codex from './codex'
 import { importFromCcSwitch } from './importer'
 import { decryptBackup, exportBackupToFile, importBackupFromFile } from './backup'
 import { usageStats } from './usage'
+import { fetchBalance, balanceSupported } from './balance'
+import { buildProviderDeeplink, findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
+import { clearAppData } from './cleardata'
 import { routerPort, routerStatus, startRouter, stopRouter } from './router'
 import { detectVendor } from '../shared/vendors'
 import http from 'node:http'
@@ -429,6 +432,82 @@ export async function runSelfTest(): Promise<void> {
         ok.close()
         fail.close()
       }
+    })
+
+    await step('余额查询：mock 上游解析 + 401 报错 + 不支持的厂商拒绝', async () => {
+      const ds = http.createServer((req, res) => {
+        const auth = req.headers.authorization ?? ''
+        if (auth !== 'Bearer sk-balance-ok-12345678') {
+          res.writeHead(401)
+          res.end('{"error":{"message":"auth"}}')
+          return
+        }
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            is_available: true,
+            balance_infos: [{ currency: 'CNY', total_balance: '110.26', granted_balance: '0.00', topped_up_balance: '110.26' }]
+          })
+        )
+      })
+      await new Promise<void>((r) => ds.listen(0, '127.0.0.1', () => r()))
+      const dsAddr = ds.address() as { port: number }
+      try {
+        assert(balanceSupported('https://api.deepseek.com'), 'deepseek 应支持余额查询')
+        assert(!balanceSupported('https://relay.example-visual.com'), '未知中转站不应支持余额查询')
+
+        const okR = await fetchBalance('https://api.deepseek.com', 'sk-balance-ok-12345678', {
+          deepseek: `http://127.0.0.1:${dsAddr.port}/user/balance`
+        })
+        assert(okR.ok === true && okR.balance === 110.26 && okR.currency === 'CNY', `余额解析错误：${JSON.stringify(okR)}`)
+
+        const authR = await fetchBalance('https://api.deepseek.com', 'sk-wrong-key-999999999', {
+          deepseek: `http://127.0.0.1:${dsAddr.port}/user/balance`
+        })
+        assert(authR.ok === false && !!authR.message?.includes('鉴权'), `401 应报鉴权失败：${JSON.stringify(authR)}`)
+
+        const unsupported = await fetchBalance('https://relay.example-visual.com', 'sk-x-1234567890')
+        assert(unsupported.ok === false, '不支持的厂商应返回失败而非发起请求')
+      } finally {
+        ds.close()
+      }
+    })
+
+    await step('深链解析：合法链接往返 + 恶意参数拒绝 + 永不携带 Key', async () => {
+      const link = buildProviderDeeplink({
+        tool: 'claude',
+        name: '示例供应商',
+        baseUrl: 'https://api.example-link.com',
+        model: 'glm-4.6',
+        keyType: 'auth_token'
+      })
+      assert(findDeeplinkInArgv(['x', link, 'y']) === link, 'argv 中应能找到 ccsl:// 链接')
+      const parsed = parseProviderDeeplink(link)
+      assert(parsed.ok === true && !!parsed.input, `合法链接应解析成功：${parsed.error}`)
+      assert(parsed.input!.tool === 'claude' && parsed.input!.baseUrl === 'https://api.example-link.com', '字段应往返一致')
+      assert(!('apiKey' in (parsed.input as object)) || (parsed.input as { apiKey?: string }).apiKey === '', '深链输入不得携带 Key')
+
+      const bad1 = parseProviderDeeplink('ccsl://provider/add?tool=claude&name=X&url=javascript:alert(1)')
+      assert(!bad1.ok, 'javascript: url 必须拒绝')
+      const bad2 = parseProviderDeeplink('ccsl://provider/add?tool=claude&name=X&url=https://ok.com&keyType=weird')
+      assert(!bad2.ok, '非法 keyType 必须拒绝')
+      const bad3 = parseProviderDeeplink('ccsl://other/cmd?tool=claude')
+      assert(!bad3.ok, '未知命令必须拒绝')
+      const bad4 = parseProviderDeeplink('https://evil.com/provider/add?tool=claude&name=X&url=https://a.com')
+      assert(!bad4.ok, '非 ccsl 协议必须拒绝')
+      const longUrl = `https://${'a'.repeat(2100)}.com`
+      const bad5 = parseProviderDeeplink(`ccsl://provider/add?tool=claude&name=X&url=${encodeURIComponent(longUrl)}`)
+      assert(!bad5.ok, '超长 url 必须拒绝')
+    })
+
+    await step('一键清空：数据文件被删、库回到空态（配置恢复在各自步骤已覆盖）', async () => {
+      const s = loadStore()
+      assert(s.providers.length > 0, '清空前库应有数据')
+      const r = await clearAppData()
+      assert(r.removed.includes('providers.json'), 'providers.json 应被删除')
+      const reloaded = loadStore()
+      assert(reloaded.providers.length === 0, '清空后库应为空')
+      assert(reloaded.current.claude === null && reloaded.current.codex === null, '清空后当前选择应为空')
     })
   }
 

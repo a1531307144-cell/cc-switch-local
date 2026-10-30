@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Api, AppSettings, ProviderInput, TestInput, ToolId } from '../shared/types'
+import type { Api, AppSettings, DeeplinkResult, ProviderInput, TestInput, ToolId } from '../shared/types'
 
 const api: Api = {
   storeGet: () => ipcRenderer.invoke('store:get'),
@@ -18,6 +18,13 @@ const api: Api = {
   usageGet: () => ipcRenderer.invoke('usage:get'),
   routerStatus: () => ipcRenderer.invoke('router:status'),
   routerSet: (tool: ToolId, enabled: boolean) => ipcRenderer.invoke('router:set', tool, enabled),
+  balanceGet: (input: { baseUrl: string; apiKey: string }) => ipcRenderer.invoke('balance:get', input),
+  clearAllData: () => ipcRenderer.invoke('data:clearAll'),
+  onDeeplinkProvider: (cb: (r: DeeplinkResult) => void) => {
+    const l = (_e: unknown, r: DeeplinkResult) => cb(r)
+    ipcRenderer.on('deeplink:provider', l)
+    return () => ipcRenderer.removeListener('deeplink:provider', l)
+  },
   settingsUpdate: (patch: Partial<AppSettings>) => ipcRenderer.invoke('settings:update', patch),
   openPath: (kind: 'data' | 'claudeConfig' | 'codexConfig') => ipcRenderer.invoke('app:openPath', kind),
   appVersion: () => ipcRenderer.invoke('app:version'),

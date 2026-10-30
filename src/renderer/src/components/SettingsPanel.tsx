@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AppSettings, BackupInfo, RouterStatus, StoreShape, ToolId } from '../../../shared/types'
+import { t, type Lang } from '../../../shared/i18n'
 import { Modal } from './ui'
 
 function fmtDate(ms: number): string {
@@ -11,10 +12,12 @@ function fmtDate(ms: number): string {
 /** 加密备份的口令输入对话框（导出/导入共用） */
 function PassphraseModal({
   mode,
+  lang,
   onClose,
   onConfirm
 }: {
   mode: 'export' | 'import'
+  lang: Lang
   onClose: () => void
   onConfirm: (pass: string) => void
 }) {
@@ -23,42 +26,38 @@ function PassphraseModal({
   const [err, setErr] = useState('')
   const exporting = mode === 'export'
   const submit = () => {
-    if (pass.length < 8) return setErr('口令至少 8 个字符')
-    if (exporting && pass !== pass2) return setErr('两次输入的口令不一致')
+    if (pass.length < 8) return setErr(t(lang, 'set.pp.errLen'))
+    if (exporting && pass !== pass2) return setErr(t(lang, 'set.pp.errMismatch'))
     setErr('')
     onConfirm(pass)
   }
   return (
-    <Modal title={exporting ? '导出加密备份' : '导入加密备份'} onClose={onClose}>
+    <Modal title={exporting ? t(lang, 'set.pp.exportTitle') : t(lang, 'set.pp.importTitle')} onClose={onClose}>
       <div className="form">
-        <p className="muted small">
-          {exporting
-            ? '供应商库（含 API Key）会用 AES-256-GCM 加密后保存到你选择的位置；口令不会存储，忘记将无法恢复。'
-            : '选择 .ccslbak 备份文件，用导出时设置的口令解密；与现有库相同的供应商会自动跳过。'}
-        </p>
+        <p className="muted small">{exporting ? t(lang, 'set.pp.exportHint') : t(lang, 'set.pp.importHint')}</p>
         <label>
-          {exporting ? '设置口令（至少 8 位）' : '解密口令'}
+          {exporting ? t(lang, 'set.pp.passExport') : t(lang, 'set.pp.passImport')}
           <input
             type="password"
             value={pass}
             onChange={(e) => setPass(e.target.value)}
-            placeholder={exporting ? '用于加密这份备份' : '导出时设置的口令'}
+            placeholder={exporting ? t(lang, 'set.pp.ph.export') : t(lang, 'set.pp.ph.import')}
             autoFocus
           />
         </label>
         {exporting && (
           <label>
-            再输一遍口令
-            <input type="password" value={pass2} onChange={(e) => setPass2(e.target.value)} placeholder='重复口令' />
+            {t(lang, 'set.pp.pass2')}
+            <input type="password" value={pass2} onChange={(e) => setPass2(e.target.value)} placeholder={t(lang, 'set.pp.ph2')} />
           </label>
         )}
         {err && <div className="form-error">{err}</div>}
         <div className="form-actions">
           <button className="btn" onClick={onClose}>
-            取消
+            {t(lang, 'btn.cancel')}
           </button>
           <button className="btn primary" onClick={submit}>
-            {exporting ? '选择保存位置' : '选择备份文件'}
+            {exporting ? t(lang, 'set.pp.pick') : t(lang, 'set.pp.pickImport')}
           </button>
         </div>
       </div>
@@ -68,12 +67,14 @@ function PassphraseModal({
 
 export default function SettingsPanel({
   store,
+  lang,
   onChanged,
   notify,
   onCheckUpdate,
   updateChecking
 }: {
   store: StoreShape
+  lang: Lang
   onChanged: () => Promise<void>
   notify: (text: string, kind?: 'ok' | 'err') => void
   onCheckUpdate: () => Promise<void>
@@ -84,13 +85,7 @@ export default function SettingsPanel({
   const [bakModal, setBakModal] = useState<'export' | 'import' | null>(null)
   const [bakBusy, setBakBusy] = useState(false)
   const [router, setRouter] = useState<RouterStatus | null>(null)
-
-  useEffect(() => {
-    window.api
-      .routerStatus()
-      .then(setRouter)
-      .catch(() => {})
-  }, [])
+  const [clearing, setClearing] = useState(false)
 
   const loadBackups = async () => {
     setBackups({
@@ -105,6 +100,10 @@ export default function SettingsPanel({
       .appVersion()
       .then(setVersion)
       .catch(() => {})
+    window.api
+      .routerStatus()
+      .then(setRouter)
+      .catch(() => {})
   }, [])
 
   const updateSetting = async (patch: Partial<AppSettings>) => {
@@ -113,10 +112,10 @@ export default function SettingsPanel({
   }
 
   const restore = async (tool: ToolId, file: string) => {
-    if (!window.confirm(`确定恢复备份 ${file} 吗？\n当前配置会先再自动备份一份。`)) return
+    if (!window.confirm(t(lang, 'set.confirmRestore', { file }))) return
     try {
       await window.api.toolRestoreBackup(tool, file)
-      notify('已恢复备份，重启对应工具的会话后生效')
+      notify(t(lang, 'set.toastRestored'))
       await loadBackups()
       await onChanged()
     } catch (e) {
@@ -124,19 +123,17 @@ export default function SettingsPanel({
     }
   }
 
-  const s = store.settings
-
   const runBackup = async (mode: 'export' | 'import', pass: string) => {
     setBakBusy(true)
     try {
       if (mode === 'export') {
         const r = await window.api.backupExport(pass)
         if (r.canceled) return
-        notify('已导出加密备份（口令未存储，请妥善保管文件与口令）')
+        notify(t(lang, 'set.toastExported'))
       } else {
         const r = await window.api.backupImport(pass)
         if (r.canceled) return
-        notify(`导入完成：新增 ${r.added} 条，跳过 ${r.skipped} 条（已存在或不合法）`)
+        notify(t(lang, 'set.toastImported', { a: r.added, s: r.skipped }))
         await onChanged()
       }
       setBakModal(null)
@@ -147,102 +144,135 @@ export default function SettingsPanel({
     }
   }
 
+  const clearAll = async () => {
+    if (!window.confirm(t(lang, 'set.confirmClear1'))) return
+    if (!window.confirm(t(lang, 'set.confirmClear2'))) return
+    setClearing(true)
+    try {
+      const r = await window.api.clearAllData()
+      notify(t(lang, 'set.toastCleared', { n: r.removed.length }))
+      await onChanged()
+      await loadBackups()
+    } catch (e) {
+      notify(t(lang, 'set.clearFail', { msg: (e as Error).message }), 'err')
+    } finally {
+      setClearing(false)
+    }
+  }
+
+  const s = store.settings
+
   return (
     <div className="settings">
       <section className="card">
-        <h3>外观</h3>
+        <h3>{t(lang, 'set.appearance')}</h3>
         <label className="field-row">
-          主题
+          {t(lang, 'set.theme')}
           <select value={s.theme} onChange={(e) => updateSetting({ theme: e.target.value as AppSettings['theme'] })}>
-            <option value="system">跟随系统</option>
-            <option value="light">浅色</option>
-            <option value="dark">深色</option>
+            <option value="system">{t(lang, 'set.theme.system')}</option>
+            <option value="light">{t(lang, 'set.theme.light')}</option>
+            <option value="dark">{t(lang, 'set.theme.dark')}</option>
+          </select>
+        </label>
+        <label className="field-row">
+          {t(lang, 'set.language')}
+          <select value={lang} onChange={(e) => updateSetting({ language: e.target.value as AppSettings['language'] })}>
+            <option value="zh">中文</option>
+            <option value="en">English</option>
           </select>
         </label>
       </section>
 
       <section className="card">
-        <h3>通用</h3>
+        <h3>{t(lang, 'set.general')}</h3>
         <label className="check">
           <input type="checkbox" checked={s.autoUpdate} onChange={(e) => updateSetting({ autoUpdate: e.target.checked })} />
-          启动时自动检查更新（仅提示，不静默安装）
+          {t(lang, 'set.autoUpdate')}
         </label>
         <label className="check">
           <input type="checkbox" checked={s.autoStart} onChange={(e) => updateSetting({ autoStart: e.target.checked })} />
-          开机自启
+          {t(lang, 'set.autoStart')}
         </label>
         <div className="field-row">
           <button className="btn sm" onClick={onCheckUpdate} disabled={updateChecking}>
-            {updateChecking ? '检查中…' : '检查更新'}
+            {updateChecking ? t(lang, 'set.checking') : t(lang, 'set.checkUpdate')}
           </button>
-          <span className="muted">当前版本 v{version || '…'}</span>
+          <span className="muted">{t(lang, 'set.currentVersion', { v: version || '…' })}</span>
         </div>
-        <p className="muted small">
-          发现新版本时页面顶部会出现下载横幅，下载完成后一键重启安装；网络不畅时会提供发布页链接手动下载。
-        </p>
+        <p className="muted small">{t(lang, 'set.updateHint')}</p>
       </section>
 
       <section className="card">
-        <h3>数据与配置目录</h3>
-        <p className="muted small">
-          供应商数据（含明文 API Key）只保存在本机数据目录，不上传任何服务器。API Key 存储于
-          providers.json，请注意不要把该目录分享给他人。
-        </p>
-        <div className="btn-row">
-          <button className="btn sm" onClick={() => window.api.openPath('data')}>
-            打开数据目录
-          </button>
-          <button className="btn sm" onClick={() => window.api.openPath('claudeConfig')}>
-            打开 Claude 配置目录
-          </button>
-          <button className="btn sm" onClick={() => window.api.openPath('codexConfig')}>
-            打开 Codex 配置目录
-          </button>
-        </div>
-      </section>
-
-      <section className="card">
-        <h3>本机路由</h3>
-        <p className="muted small">
-          在工具页用「本机路由」开关开启。开启后请求经 127.0.0.1 代理转发：切换供应商即时生效，上游故障时按列表顺序自动转移
-          （最简版仅透传 Anthropic/OpenAI 兼容端点，协议转换留待后续版本）。
-        </p>
+        <h3>{t(lang, 'set.router')}</h3>
+        <p className="muted small">{t(lang, 'set.routerDesc')}</p>
         <p className="muted small">
           {router?.running
-            ? `状态：运行中（127.0.0.1:${router.port}）｜Claude 转发 ${router.claude.requests} 次/失败 ${router.claude.errors} 次｜Codex 转发 ${router.codex.requests} 次/失败 ${router.codex.errors} 次`
-            : '状态：未运行'}
-          {router?.error ? `｜最近错误：${router.error}` : ''}
+            ? t(lang, 'set.routerRunning', {
+                port: router.port,
+                c: router.claude.requests,
+                cf: router.claude.errors,
+                x: router.codex.requests,
+                xf: router.codex.errors
+              })
+            : t(lang, 'set.routerIdle')}
+          {router?.error ? t(lang, 'set.routerError', { err: router.error }) : ''}
         </p>
       </section>
 
       <section className="card">
-        <h3>备份与迁移</h3>
-        <p className="muted small">
-          把供应商库导出为 AES-256-GCM 加密文件，用于跨设备迁移或冷备份。文件用你设置的口令加密，
-          Key 永远不会离开本机——需要迁移时手动把文件带到另一台电脑导入即可。
-        </p>
+        <h3>{t(lang, 'set.backup')}</h3>
+        <p className="muted small">{t(lang, 'set.backupDesc')}</p>
         <div className="btn-row">
           <button className="btn sm" onClick={() => setBakModal('export')}>
-            导出加密备份
+            {t(lang, 'set.export')}
           </button>
           <button className="btn sm" onClick={() => setBakModal('import')}>
-            导入加密备份
+            {t(lang, 'set.import')}
           </button>
         </div>
+      </section>
+
+      <section className="card">
+        <h3>{t(lang, 'set.deeplink')}</h3>
+        <p className="muted small">{t(lang, 'set.deeplinkDesc')}</p>
+      </section>
+
+      <section className="card">
+        <h3>{t(lang, 'set.dataDir')}</h3>
+        <p className="muted small">{t(lang, 'set.dataDesc')}</p>
+        <div className="btn-row">
+          <button className="btn sm" onClick={() => window.api.openPath('data')}>
+            {t(lang, 'set.openData')}
+          </button>
+          <button className="btn sm" onClick={() => window.api.openPath('claudeConfig')}>
+            {t(lang, 'set.openClaude')}
+          </button>
+          <button className="btn sm" onClick={() => window.api.openPath('codexConfig')}>
+            {t(lang, 'set.openCodex')}
+          </button>
+        </div>
+      </section>
+
+      <section className="card danger-zone">
+        <h3>{t(lang, 'set.danger')}</h3>
+        <p className="muted small">{t(lang, 'set.dangerDesc')}</p>
+        <button className="btn danger" onClick={() => void clearAll()} disabled={clearing}>
+          {clearing ? t(lang, 'set.clearAll.busy') : t(lang, 'set.clearAll')}
+        </button>
       </section>
 
       {(['claude', 'codex'] as ToolId[]).map((tool) => (
         <section className="card" key={tool}>
-          <h3>{tool === 'claude' ? 'Claude Code' : 'Codex'} 配置备份（最近 {backups[tool].length} 份，自动保留 10 份）</h3>
+          <h3>{t(lang, 'set.backupsTitle', { tool: tool === 'claude' ? 'Claude Code' : 'Codex', n: backups[tool].length })}</h3>
           {backups[tool].length === 0 ? (
-            <p className="muted small">暂无备份。每次切换/恢复前都会自动备份。</p>
+            <p className="muted small">{t(lang, 'set.noBackups')}</p>
           ) : (
             <table className="backup-table">
               <thead>
                 <tr>
-                  <th>文件</th>
-                  <th>时间</th>
-                  <th>大小</th>
+                  <th>{t(lang, 'th.file')}</th>
+                  <th>{t(lang, 'th.time')}</th>
+                  <th>{t(lang, 'th.size')}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -256,7 +286,7 @@ export default function SettingsPanel({
                     <td className="muted small">{(b.size / 1024).toFixed(1)} KB</td>
                     <td>
                       <button className="btn sm" onClick={() => restore(tool, b.file)}>
-                        恢复
+                        {t(lang, 'set.restore')}
                       </button>
                     </td>
                   </tr>
@@ -268,16 +298,14 @@ export default function SettingsPanel({
       ))}
 
       <section className="card">
-        <h3>关于</h3>
-        <p className="muted small">
-          CC Switch Local v{version || '…'} —— 本地优先的 API 供应商管理与切换工具。所有数据仅存本机，无遥测、无上传；
-          切换只改动目标工具配置文件中的少量键，其余内容原样保留，并在每次写入前自动备份。
-        </p>
+        <h3>{t(lang, 'set.about')}</h3>
+        <p className="muted small">{t(lang, 'set.aboutText', { v: version || '…' })}</p>
       </section>
 
       {bakModal && (
         <PassphraseModal
           mode={bakModal}
+          lang={lang}
           onClose={() => (bakBusy ? undefined : setBakModal(null))}
           onConfirm={(pass) => void runBackup(bakModal, pass)}
         />

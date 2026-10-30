@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { KeyType, Preset, ToolId } from '../../../shared/types'
+import type { KeyType, Lang, Preset, ToolId } from '../../../shared/types'
+import { t } from '../../../shared/i18n'
 import { detectVendor } from '../../../shared/vendors'
 import { Modal, VendorChip } from './ui'
 
@@ -29,10 +30,12 @@ function safeHost(url: string): string {
 
 export default function ProviderForm({
   draft,
+  lang,
   onClose,
   onSave
 }: {
   draft: FormDraft
+  lang: Lang
   onClose: () => void
   onSave: (d: FormDraft) => Promise<void>
 }) {
@@ -70,9 +73,9 @@ export default function ProviderForm({
     .slice(0, 8)
 
   const submit = async () => {
-    if (!form.name.trim()) return setErr('请填写名称')
-    if (!/^https?:\/\//.test(form.baseUrl.trim())) return setErr('Base URL 必须以 http:// 或 https:// 开头')
-    if (!form.apiKey.trim()) return setErr('请填写 API Key')
+    if (!form.name.trim()) return setErr(t(lang, 'form.err.name'))
+    if (!/^https?:\/\//.test(form.baseUrl.trim())) return setErr(t(lang, 'form.err.url'))
+    if (!form.apiKey.trim()) return setErr(t(lang, 'form.err.key'))
     setErr('')
     setSaving(true)
     try {
@@ -84,10 +87,10 @@ export default function ProviderForm({
   }
 
   return (
-    <Modal title={form.id ? '编辑供应商' : '新建供应商'} onClose={onClose}>
+    <Modal title={form.id ? t(lang, 'form.editTitle') : t(lang, 'form.newTitle')} onClose={onClose}>
       <div className="form">
         <label>
-          从预设填入（{presets.length} 条，按名称或域名搜索）
+          {t(lang, 'form.presetLabel', { n: presets.length })}
           <div
             className="preset-picker"
             onBlur={() => {
@@ -101,7 +104,7 @@ export default function ProviderForm({
                 setPresetOpen(true)
               }}
               onFocus={() => setPresetOpen(true)}
-              placeholder="例如：packy、智谱、88api、deepseek…"
+              placeholder={t(lang, 'form.presetPh')}
             />
             {presetOpen && presetMatches.length > 0 && (
               <div className="preset-list">
@@ -124,12 +127,12 @@ export default function ProviderForm({
               </div>
             )}
           </div>
-          <small>预设仅供参考，端点与模型以各服务商官方文档为准</small>
+          <small>{t(lang, 'form.presetNote')}</small>
         </label>
 
         <label>
-          名称 *
-          <input value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="例如：我的中转站" />
+          {t(lang, 'form.name')}
+          <input value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={t(lang, 'form.namePh')} />
         </label>
 
         <label>
@@ -142,13 +145,12 @@ export default function ProviderForm({
           {detectVendor(form.baseUrl.trim()) && (
             <span className="vendor-hint">
               <VendorChip vendor={detectVendor(form.baseUrl.trim())!} />
-              <span>已按端点自动识别</span>
             </span>
           )}
         </label>
 
         <label>
-          API Key *
+          {t(lang, 'form.apiKey')}
           <div className="key-row">
             <input
               type={showKey ? 'text' : 'password'}
@@ -158,23 +160,23 @@ export default function ProviderForm({
             />
             <label className="check inline">
               <input type="checkbox" checked={showKey} onChange={(e) => setShowKey(e.target.checked)} />
-              显示
+              {t(lang, 'form.show')}
             </label>
           </div>
         </label>
 
         {form.tool === 'claude' ? (
           <label>
-            Key 类型
+            {t(lang, 'form.keyType')}
             <select value={form.keyType} onChange={(e) => set({ keyType: e.target.value as KeyType })}>
-              <option value="auth_token">ANTHROPIC_AUTH_TOKEN（绝大多数中转站）</option>
-              <option value="api_key">ANTHROPIC_API_KEY（官方 API 计费）</option>
+              <option value="auth_token">{t(lang, 'form.keyType.auth')}</option>
+              <option value="api_key">{t(lang, 'form.keyType.api')}</option>
             </select>
           </label>
         ) : (
           <>
             <label>
-              模型（写入 config.toml 的 model，可选）
+              {t(lang, 'form.modelCodex')}
               <input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="gpt-5-codex" />
             </label>
             <label>
@@ -189,13 +191,13 @@ export default function ProviderForm({
 
         {form.tool === 'claude' && (
           <label>
-            模型（仅用于连接测试，可选）
+            {t(lang, 'form.modelClaude')}
             <input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="claude-sonnet-4-5" />
           </label>
         )}
 
         <label>
-          备注（可选）
+          {t(lang, 'form.notes')}
           <textarea value={form.notes} onChange={(e) => set({ notes: e.target.value })} rows={2} />
         </label>
 
@@ -203,10 +205,10 @@ export default function ProviderForm({
 
         <div className="form-actions">
           <button className="btn" onClick={onClose} disabled={saving}>
-            取消
+            {t(lang, 'btn.cancel')}
           </button>
           <button className="btn primary" onClick={submit} disabled={saving}>
-            {saving ? '保存中…' : '保存'}
+            {saving ? t(lang, 'btn.saving') : t(lang, 'btn.save')}
           </button>
         </div>
       </div>

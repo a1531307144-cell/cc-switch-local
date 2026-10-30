@@ -14,18 +14,18 @@
 - 用户的核心诉求是**安全性**：API Key 全部存本机、代码开源可审计、零遥测零上传。任何"把数据传出去"的功能都与项目定位冲突，不要加。
 - 对标 farion1231/cc-switch（v4.0.21 起为功能参照物）。2026-10-30 用户拍板「功能实现完全相似」为目标分多版走：v0.6.0 交付预设库 / 关键字段写入 / 用量统计 / 本机路由最简版 / 托盘 / 加密备份；**协议转换与聚合模式、MCP、多工具支持、云同步（决定不做，用加密备份文件替代）见 §9**。
 
-## 2. 当前状态（2026-10-30：v0.6.0 功能对标版）
+## 2. 当前状态（2026-10-31：v0.7.0 小而美版）
 
 | 项 | 状态 |
 | --- | --- |
 | TypeScript 类型检查 | ✅ 通过 |
-| 端到端自测（17 步断言） | ✅ 17/17 通过（隔离目录 + 本地 mock 上游，未触碰真实配置） |
-| CDP 实机验证 | ✅ 6 张截图（主界面/预设搜索/用量仪表盘/设置/路由开启/暗色）+ 关窗驻留 + 路由自启动 |
+| 端到端自测（20 步断言） | ✅ 20/20 通过（隔离目录 + 本地 mock 上游，未触碰真实配置） |
+| CDP 实机验证 | ✅ 中英双语主界面/设置页截图 + 余额按钮/复制链接/危险区程序化断言全过 |
 | Windows 打包 | ✅ win-unpacked 实机验证通过，NSIS 由 CI 产出 |
-| 新功能（v0.6.0） | ✅ 256 条预设库、Codex 手术式写入、用量统计、本机路由（透传+故障转移）、托盘、加密备份 |
+| 新功能（v0.7.0） | ✅ 余额查询（DeepSeek/Moonshot/OpenRouter）、一键清空数据（危险区）、ccsl:// 深链导入、中英双语 |
 | GitHub 仓库 | ✅ `a1531307144-cell/cc-switch-local`（公开） |
 
-**对标 cc-switch 仍未做的**（见 §9 路线图）：路由协议转换、聚合模式、会话阅读器、MCP/Skills/提示词、多工具、额度显示、主密码加密。
+**对标 cc-switch 仍未做的**（见 §9 路线图）：路由协议转换、聚合模式、会话阅读器、MCP/Skills/提示词、多工具、额度显示（余额查询已覆盖三家）、主密码加密。
 
 ## 3. 技术栈与架构
 
@@ -44,7 +44,11 @@ src/
     backup.ts            # 加密备份：AES-256-GCM（scrypt 派生），导出/导入 .ccslbak，Key 不出机
     tray.ts              # 系统托盘：快切菜单 + 关窗驻留（close→hide，before-quit 才真退）
     test.ts              # 连接测试（electron net.fetch，12s 超时，区分 ok/auth/http/network）
+    balance.ts           # 余额查询（v0.7.0）：DeepSeek/Moonshot/OpenRouter 官方接口，仅限厂商域名，endpoints 参数供自测 mock
+    cleardata.ts         # 一键清空（v0.7.0）：只删 providers.json/usage-cache.json，绝不递归删 userData
+    deeplink.ts          # ccsl:// 深链（v0.7.0）：解析 provider/add，永不携带 Key，解析永不抛错
     importer.ts          # 从 cc-switch 迁移（旧版 JSON + SQLite，递归挖掘，尽力而为不抛错）
+    i18n（shared/i18n.ts）# v0.7.0 双语字典：渲染层全部字符串 + 托盘菜单；主进程报错仍中文
     presets.ts           # 预设合并层：精选中文官方条目 + presets-data.ts（256 条生成数据，去重）
     presets-data.ts      # scripts/extract-presets.mjs 从 cc-switch（MIT）自动生成，勿手改
     updater.ts           # electron-updater（打包后启用，失败静默）
@@ -192,19 +196,20 @@ model_reasoning_effort = "low"
 17. **单实例锁对显式 `CCS_DATA_DIR` 实例豁免**（v0.6.0 起）：测试实例与用户实例数据目录不同，锁会误杀测试启动；与 `--selftest` 豁免同理，都是环境变量门控。
 13. **本地模拟更新服务器验证更新链路**（发布新版本前的推荐验证法）：构建新版安装包 → 把 `latest.yml` + 连字符命名的安装包/blockmap 放进一个静态目录（**注意 latest.yml 里的文件名是连字符形态，本地构建产物是空格形态，文件名必须对齐**）→ `node http` 起静态服务 → 把测试用 win-unpacked 的 `resources/app-update.yml` 改为 `provider: generic; url: http://localhost:<port>` → CDP 自动点击 检查→下载→安装 → 注册表确认版本真实升级。模拟器脚本模式参考会话历史（update-server.mjs + e2e-update.mjs）。
 
-## 9. 路线图（2026-10-30 用户拍板后更新）
+## 9. 路线图（2026-10-31 更新）
 
 目标：功能实现上与 cc-switch v4.0.21 完全相似（分多版），设计延续现有 LexBench 风格。
 
-1. **v0.7.0 候选：路由协议转换**（v0.6.0 只有透传+故障转移）——Anthropic↔OpenAI Chat Completions 互转（含 SSE 流式），让 Claude Code 用 GPT、Codex 用 Claude；参考 cc-switch `src-tauri/src/proxy/`。**工程量大，单独规划并充分测试**。
+1. **v0.8.0 首选：路由协议转换**（v0.6.0 只有透传+故障转移）——Anthropic↔OpenAI Chat Completions 互转（含 SSE 流式），让 Claude Code 用 GPT、Codex 用 Claude；参考 cc-switch `src-tauri/src/proxy/`。**工程量大，单独规划并充分测试**。
 2. 聚合模式（多家供应商的模型进同一个模型选择器，按模型分发）。
-3. 会话阅读器（v0.6.0 拍板时被用户放进「核心包+阅读器」之外，属下一批）：解析会话 JSONL 成阅读页；用量扫描已打好解析基础。
+3. 会话阅读器：解析会话 JSONL 成阅读页；用量扫描已打好解析基础。
 4. MCP 管理 / Skills / 提示词（cc-switch 的统一面板 + 按工具同步）。
 5. 主密码加密存储 API Key（用户最痛安全需求，一直排着）。
-6. 更多工具支持（Gemini CLI 优先，其余 12 工具清单见 cc-switch README）；多语言。
-7. 额度/余额显示（各家中转接口不统一，优先级靠后）。
-8. **不做**：WebDAV/S3 云同步（2026-10-30 用户拍板——原版把含 Key 配置明文传网盘，与"Key 绝不上传"铁律冲突；已用加密备份文件替代）。
-9. 发布后事项：考虑让用户申请代码签名证书。
+6. 更多工具支持（Gemini CLI 优先，其余 12 工具清单见 cc-switch README）。
+7. 余额查询扩面（当前仅 DeepSeek/Moonshot/OpenRouter 三家；各家接口不统一，按需求加）。
+8. 主进程报错信息双语化（v0.7.0 只做了渲染层+托盘）。
+9. **不做**：WebDAV/S3 云同步（2026-10-30 用户拍板——原版把含 Key 配置明文传网盘，与"Key 绝不上传"铁律冲突；已用加密备份文件替代）。
+10. 发布后事项：考虑让用户申请代码签名证书。
 
 ## 9.5 视觉规范（v0.2.0 定稿，改样式前必读）
 
