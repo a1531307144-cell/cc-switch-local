@@ -13,13 +13,23 @@ const srcDir = path.join(root, 'node_modules', 'simple-icons', 'icons')
 const outDir = path.join(root, 'src', 'renderer', 'src', 'assets', 'vendors')
 
 // slug（simple-icons 文件名）→ 输出文件名 + 品牌色（选在浅/深背景下都可辨的色值）
+// 注意：simple-icons 16.x 已因品牌方要求移除 openai 等 slug；新增前先确认文件存在。
 const VENDORS = [
   { slug: 'deepseek', out: 'deepseek', fill: '#5786FE' },
   { slug: 'anthropic', out: 'anthropic', fill: '#D97757' },
   { slug: 'moonshotai', out: 'moonshotai', fill: '#6B7280' },
   { slug: 'qwen', out: 'qwen', fill: '#6950EF' },
   { slug: 'openrouter', out: 'openrouter', fill: '#94A3B8' },
-  { slug: 'ollama', out: 'ollama', fill: '#94A3B8' }
+  { slug: 'ollama', out: 'ollama', fill: '#94A3B8' },
+  { slug: 'minimax', out: 'minimax', fill: '#F23F5D' },
+  { slug: 'modelscope', out: 'modelscope', fill: '#7C3AED' },
+  { slug: 'baidu', out: 'baidu', fill: '#2932E1' },
+  { slug: 'bytedance', out: 'bytedance', fill: '#0D5EF4' },
+  { slug: 'google', out: 'google', fill: '#3186FF' },
+  { slug: 'mistralai', out: 'mistralai', fill: '#FA520F' },
+  { slug: 'perplexity', out: 'perplexity', fill: '#1FB8CD' },
+  { slug: 'tencenthy', out: 'tencenthy', fill: '#0052D9' },
+  { slug: 'lmstudio', out: 'lmstudio', fill: '#94A3B8' }
 ]
 
 fs.mkdirSync(outDir, { recursive: true })

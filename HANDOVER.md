@@ -14,18 +14,18 @@
 - 用户的核心诉求是**安全性**：API Key 全部存本机、代码开源可审计、零遥测零上传。任何"把数据传出去"的功能都与项目定位冲突，不要加。
 - 对标 farion1231/cc-switch（v4.0.21 起为功能参照物）。2026-10-30 用户拍板「功能实现完全相似」为目标分多版走：v0.6.0 交付预设库 / 关键字段写入 / 用量统计 / 本机路由最简版 / 托盘 / 加密备份；**协议转换与聚合模式、MCP、多工具支持、云同步（决定不做，用加密备份文件替代）见 §9**。
 
-## 2. 当前状态（2026-10-31：v0.7.0 小而美版）
+## 2. 当前状态（2026-10-31：v0.8.0 视觉重设计版）
 
 | 项 | 状态 |
 | --- | --- |
 | TypeScript 类型检查 | ✅ 通过 |
-| 端到端自测（20 步断言） | ✅ 20/20 通过（隔离目录 + 本地 mock 上游，未触碰真实配置） |
-| CDP 实机验证 | ✅ 中英双语主界面/设置页截图 + 余额按钮/复制链接/危险区程序化断言全过 |
+| 端到端自测（22 步断言） | ✅ 22/22 通过（隔离目录 + 本地 mock 上游，未触碰真实配置） |
+| CDP 实机验证 | ✅ 15 项断言 + 5 图全过：卡面无 Key/端点、拖拽排序持久化、搜索、菜单克隆、导入下拉、侧栏折叠持久化（含刷新后保持）、暗色主题 |
 | Windows 打包 | ✅ win-unpacked 实机验证通过，NSIS 由 CI 产出 |
-| 新功能（v0.7.0） | ✅ 余额查询（DeepSeek/Moonshot/OpenRouter）、一键清空数据（危险区）、ccsl:// 深链导入、中英双语 |
+| 新功能（v0.8.0） | ✅ 图标优先卡片网格（卡面只留图标+名称）、拖拽排序、供应商克隆、搜索过滤、可折叠侧栏、功能区划分（导入收进下拉）、厂商图标扩面至 15 家 |
 | GitHub 仓库 | ✅ `a1531307144-cell/cc-switch-local`（公开） |
 
-**对标 cc-switch 仍未做的**（见 §9 路线图）：路由协议转换、聚合模式、会话阅读器、MCP/Skills/提示词、多工具、额度显示（余额查询已覆盖三家）、主密码加密。
+**对标 cc-switch 仍未做的**（见 §9 路线图）：路由协议转换、聚合模式、会话阅读器、MCP/Skills/提示词、多工具、主密码加密。
 
 ## 3. 技术栈与架构
 
@@ -47,14 +47,15 @@ src/
     balance.ts           # 余额查询（v0.7.0）：DeepSeek/Moonshot/OpenRouter 官方接口，仅限厂商域名，endpoints 参数供自测 mock
     cleardata.ts         # 一键清空（v0.7.0）：只删 providers.json/usage-cache.json，绝不递归删 userData
     deeplink.ts          # ccsl:// 深链（v0.7.0）：解析 provider/add，永不携带 Key，解析永不抛错
+    library.ts           # 供应商库业务操作（v0.8.0）：cloneProvider（副本紧跟原条目）/ reorderProviders（拖拽排序，校验 id 集合恰好匹配）；IPC 与自测共用
     importer.ts          # 从 cc-switch 迁移（旧版 JSON + SQLite，递归挖掘，尽力而为不抛错）
     i18n（shared/i18n.ts）# v0.7.0 双语字典：渲染层全部字符串 + 托盘菜单；主进程报错仍中文
     presets.ts           # 预设合并层：精选中文官方条目 + presets-data.ts（256 条生成数据，去重）
     presets-data.ts      # scripts/extract-presets.mjs 从 cc-switch（MIT）自动生成，勿手改
     updater.ts           # electron-updater（打包后启用，失败静默）
-    selftest.ts          # 端到端自测脚本（17 步）
+    selftest.ts          # 端到端自测脚本（22 步）
   preload/index.ts       # contextBridge 暴露 window.api（类型 = shared.Api）
-  renderer/              # React UI（中文）：App + ProviderCard/ProviderForm/SettingsPanel/UsageDashboard
+  renderer/              # React UI：App + ProviderCard（v0.8.0 图标优先网格卡片，可拖拽）/ ProviderForm / SettingsPanel / UsageDashboard / Icons（内联 SVG）/ ui（VendorChip/VendorLogo/Modal）
 ```
 
 **数据流**：Renderer ←(contextBridge ipcRenderer.invoke)→ 主进程 ←(fs 原子写)→ 三个数据位置：
@@ -194,13 +195,16 @@ model_reasoning_effort = "low"
 15. **CCP/CDP 模拟暗色主题对「显式主题」无效**：应用主题由 store.settings.theme 决定（light 时 matchMedia 模拟被忽略），可视化测试想拍暗色直接用 CDP 把设置页 select 切到 dark，别依赖 `Emulation.setEmulatedMedia`。
 16. **预设数据是生成的**：`src/main/presets-data.ts` 由 `scripts/extract-presets.mjs` 从 cc-switch 仓库（MIT）生成；刷新预设 = 重新下载上游两个 preset 文件后重跑该脚本，**不要手改生成文件**。上游数据是 TS 对象：剥离 import（含多行）→ esbuild 转 CJS → require。
 17. **单实例锁对显式 `CCS_DATA_DIR` 实例豁免**（v0.6.0 起）：测试实例与用户实例数据目录不同，锁会误杀测试启动；与 `--selftest` 豁免同理，都是环境变量门控。
-13. **本地模拟更新服务器验证更新链路**（发布新版本前的推荐验证法）：构建新版安装包 → 把 `latest.yml` + 连字符命名的安装包/blockmap 放进一个静态目录（**注意 latest.yml 里的文件名是连字符形态，本地构建产物是空格形态，文件名必须对齐**）→ `node http` 起静态服务 → 把测试用 win-unpacked 的 `resources/app-update.yml` 改为 `provider: generic; url: http://localhost:<port>` → CDP 自动点击 检查→下载→安装 → 注册表确认版本真实升级。模拟器脚本模式参考会话历史（update-server.mjs + e2e-update.mjs）。
+18. **本地模拟更新服务器验证更新链路**（发布新版本前的推荐验证法）：构建新版安装包 → 把 `latest.yml` + 连字符命名的安装包/blockmap 放进一个静态目录（**注意 latest.yml 里的文件名是连字符形态，本地构建产物是空格形态，文件名必须对齐**）→ `node http` 起静态服务 → 把测试用 win-unpacked 的 `resources/app-update.yml` 改为 `provider: generic; url: http://localhost:<port>` → CDP 自动点击 检查→下载→安装 → 注册表确认版本真实升级。模拟器脚本模式参考会话历史（update-server.mjs + e2e-update.mjs）。
+19. **out/ 没构建就跑 `npx electron . --selftest` 会静默挂死**（2026-10-31 实测）：Electron 找不到 main 后弹系统错误对话框且进程不退出，管道里看不到任何输出。自测前必须先 `npm run build`（`npm run selftest` 自带 build），并用 `taskkill //PID <pid> //F`（Git Bash 双斜杠）清理挂死进程。
+20. **克隆功能与备份导入去重的相互作用**：备份导入按 `tool|baseUrl|apiKey` 去重，而克隆体与原条目三元组完全相同——删掉原条目再导入备份会被它的克隆挡住（跳过而不是找回）。这是设计行为，不是 bug；自测的备份导入步骤因此选一条**没有克隆体**的供应商做受删对象（2026-10-31 自测抓到）。
+21. **CDP 直调 `window.api.settingsUpdate` 不会刷新 React 状态**：主题等由 App 从 store 派生的界面必须 reload 后才生效（真实 UI 走 select→onChanged→refresh 所以没事）。CDP 验证这类设置一律「settingsUpdate + Page.reload + 断言」。
 
 ## 9. 路线图（2026-10-31 更新）
 
 目标：功能实现上与 cc-switch v4.0.21 完全相似（分多版），设计延续现有 LexBench 风格。
 
-1. **v0.8.0 首选：路由协议转换**（v0.6.0 只有透传+故障转移）——Anthropic↔OpenAI Chat Completions 互转（含 SSE 流式），让 Claude Code 用 GPT、Codex 用 Claude；参考 cc-switch `src-tauri/src/proxy/`。**工程量大，单独规划并充分测试**。
+1. **v0.9.0 首选：路由协议转换**（v0.6.0 只有透传+故障转移）——Anthropic↔OpenAI Chat Completions 互转（含 SSE 流式），让 Claude Code 用 GPT、Codex 用 Claude；参考 cc-switch `src-tauri/src/proxy/`。**工程量大，单独规划并充分测试**（v0.8.0 因用户拍板先做视觉重设计而顺延）。
 2. 聚合模式（多家供应商的模型进同一个模型选择器，按模型分发）。
 3. 会话阅读器：解析会话 JSONL 成阅读页；用量扫描已打好解析基础。
 4. MCP 管理 / Skills / 提示词（cc-switch 的统一面板 + 按工具同步）。
@@ -219,6 +223,12 @@ model_reasoning_effort = "low"
 - **强调色 = 品牌幼苗绿**（取自 `build/icon.png` 的鼠尾草绿）：浅色 `--accent: #6b8f77`（按钮底、白字），文字/图标态用 `--accent-ink: #52735e`；暗色 `#9dbba3`。语义成功色 `--ok` 是饱和正绿，靠饱和度与用途区分，不要混用。
 - **圆角阶梯**：4（微角）/ 8（小按钮）/ 12（按钮输入）/ 18（卡片浮层）/ 26（侧栏·对话框·主画布）/ 999（胶囊徽标）。R≥18 的表面同时声明 `corner-shape: squircle`（Chromium 140+ 生效，旧环境自动回退普通圆角）。
 - **布局骨架**：窗口底 `--bg` + 悬浮侧栏（8px 间距、radius 26、`--chrome` 底、shadow-2）+ 主画布（radius 26、四周呼吸缝）。分割线用 `.fade-line` 渐隐线，不用通栏直线。
+- **供应商区（v0.8.0 定稿，动卡片前必读）**：
+  - **图标优先**：卡片（`.pcard`，网格 `repeat(auto-fill, minmax(158px,1fr))`）卡面只放**大号厂商图标（44px `.vendor-logo`）或彩色字母方块（`.vendor-tile`）+ 名称**；厂商名作 11px 副标题。**禁止往卡面加回 Key/端点/备注等细节**——细节只进「⋯」菜单与编辑对话框（2026-10-31 用户明确要求，图标可识别度第一）。
+  - 功能区划分：页头（`.page-head`）= 状态行 + 路由开关 + 导入下拉 + 搜索 + 新建；卡片网格只放供应商。设置/用量/导入等辅助功能进侧栏或下拉，不与卡片混排。
+  - 侧栏可折叠：`settings.sidebarCollapsed` 持久化；折叠宽 64px（图标/CC·CX 徽章），展开 218px。
+  - 悬浮操作条 `.pcard-actions` 默认 opacity:0，hover/focus-within 显示——新加卡片操作先进「⋯」菜单，别把按钮平铺回卡面。
+  - 图标扩面流程：`src/shared/vendors.ts` 加规则 + `scripts/copy-vendor-icons.mjs` 的 VENDORS 加一行 + 重跑该脚本。注意 simple-icons 16.x 已移除 openai 等 slug，新增前先确认文件存在。
 - **阴影三档** shadow-1/2/3（低透明度多层），分层优先靠底色差和描边，别堆阴影。
 - **字体 MiSans**：`misans` 包的 VF 版（`import 'misans/lib/Normal/MiSansVF.min.css'`，unicode-range 分包按需加载）。不要引入普通 TTF 全量版。
 - **品牌图标再生成**：源图（用户提供的幼苗图）+ `tmp-visual/make-icon.js`（offscreen canvas：底色检测 → squircle 遮罩内缩 5px 防白边 → 边缘带染底板米白）输出 `build/icon.png`（electron-builder 取用，自动转 ico）与 `src/renderer/src/assets/logo.png`（侧栏 logo）。tmp-visual 在 .gitignore，脚本内容见仓库历史。

@@ -38,6 +38,8 @@ export interface AppSettings {
   theme: ThemeMode
   /** 界面语言（v0.7.0 起；缺省 zh） */
   language?: Lang
+  /** 侧栏折叠（v0.8.0 起；缺省展开） */
+  sidebarCollapsed?: boolean
   /** 本机路由模式（每工具独立开关；port 缺省 15721；缺省 false） */
   router?: { claude: boolean; codex: boolean; port?: number }
 }
@@ -172,6 +174,10 @@ export interface Api {
   storeGet(): Promise<StoreShape>
   providerSave(input: ProviderInput): Promise<Provider>
   providerDelete(id: string): Promise<boolean>
+  /** 克隆供应商（复制全部字段，新 id，名称加「副本」后缀，排在原条目之后） */
+  providerClone(id: string): Promise<Provider>
+  /** 重排某工具的供应商顺序（拖拽排序；ids 必须恰好是该工具全部供应商） */
+  providersReorder(tool: ToolId, ids: string[]): Promise<boolean>
   providerSwitch(tool: ToolId, id: string | null): Promise<SwitchResult>
   toolImportCurrent(tool: ToolId): Promise<Provider | null>
   toolStatus(tool: ToolId): Promise<ToolStatus>

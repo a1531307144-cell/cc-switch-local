@@ -16,3 +16,4 @@ session-*.md
 .DS_Store
 Thumbs.db
 tmp-research/
+tmp-cdp/

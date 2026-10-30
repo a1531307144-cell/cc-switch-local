@@ -41,6 +41,42 @@ const RULES: { match: string; vendor: VendorInfo }[] = [
     vendor: { id: 'openrouter', name: 'OpenRouter', letter: 'R', color: '#94A3B8', icon: 'openrouter' }
   },
   {
+    match: 'api.minimax.chat',
+    vendor: { id: 'minimax', name: 'MiniMax', letter: 'M', color: '#F23F5D', icon: 'minimax' }
+  },
+  {
+    match: 'api.minimaxi.com',
+    vendor: { id: 'minimax', name: 'MiniMax', letter: 'M', color: '#F23F5D', icon: 'minimax' }
+  },
+  {
+    match: 'modelscope.cn',
+    vendor: { id: 'modelscope', name: 'ModelScope 魔搭', letter: '模', color: '#7C3AED', icon: 'modelscope' }
+  },
+  {
+    match: 'baidubce.com',
+    vendor: { id: 'baidu', name: '百度千帆', letter: 'B', color: '#2932E1', icon: 'baidu' }
+  },
+  {
+    match: 'volces.com',
+    vendor: { id: 'doubao', name: '火山方舟（豆包）', letter: '豆', color: '#0D5EF4', icon: 'bytedance' }
+  },
+  {
+    match: 'generativelanguage.googleapis.com',
+    vendor: { id: 'gemini', name: 'Google Gemini', letter: 'G', color: '#3186FF', icon: 'google' }
+  },
+  {
+    match: 'api.mistral.ai',
+    vendor: { id: 'mistral', name: 'Mistral', letter: 'M', color: '#FA520F', icon: 'mistralai' }
+  },
+  {
+    match: 'api.perplexity.ai',
+    vendor: { id: 'perplexity', name: 'Perplexity', letter: 'P', color: '#1FB8CD', icon: 'perplexity' }
+  },
+  {
+    match: 'api.hunyuan.cloud.tencent.com',
+    vendor: { id: 'hunyuan', name: '腾讯混元', letter: '混', color: '#0052D9', icon: 'tencenthy' }
+  },
+  {
     match: 'api.openai.com',
     vendor: { id: 'openai', name: 'OpenAI', letter: 'O', color: '#10A37F' }
   },
@@ -73,10 +109,14 @@ export function detectVendor(baseUrl: string): VendorInfo | null {
   }
 
   if (isLocalHost(host)) {
-    // 11434 是 Ollama 默认端口
-    return port === '11434'
-      ? { id: 'ollama', name: 'Ollama（本地）', letter: 'O', color: '#94A3B8', icon: 'ollama' }
-      : { id: 'local', name: '本地服务', letter: '本', color: '#94A3B8' }
+    // 11434 是 Ollama 默认端口；1234 是 LM Studio 默认端口
+    if (port === '11434') {
+      return { id: 'ollama', name: 'Ollama（本地）', letter: 'O', color: '#94A3B8', icon: 'ollama' }
+    }
+    if (port === '1234') {
+      return { id: 'lmstudio', name: 'LM Studio（本地）', letter: 'L', color: '#94A3B8', icon: 'lmstudio' }
+    }
+    return { id: 'local', name: '本地服务', letter: '本', color: '#94A3B8' }
   }
 
   // 严格后缀匹配，避免 "api.deepseek.com.evil.com" 这类仿冒主机误识别

@@ -10,6 +10,7 @@ import { usageStats } from './usage'
 import { fetchBalance, balanceSupported } from './balance'
 import { buildProviderDeeplink, findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
 import { clearAppData } from './cleardata'
+import { cloneProvider, reorderProviders } from './library'
 import { routerPort, routerStatus, startRouter, stopRouter } from './router'
 import { detectVendor } from '../shared/vendors'
 import http from 'node:http'
@@ -105,6 +106,12 @@ export async function runSelfTest(): Promise<void> {
       assert(oa?.id === 'openai' && !oa.icon && oa.letter === 'O', 'openai 应使用字母徽章')
       const ol = detectVendor('http://127.0.0.1:11434')
       assert(ol?.id === 'ollama', 'ollama 本地端口识别失败')
+      const lms = detectVendor('http://127.0.0.1:1234')
+      assert(lms?.id === 'lmstudio' && lms.icon === 'lmstudio', 'lmstudio 本地端口识别失败')
+      const gm = detectVendor('https://generativelanguage.googleapis.com')
+      assert(gm?.id === 'gemini' && gm.icon === 'google', 'gemini 识别失败')
+      const mm = detectVendor('https://api.minimaxi.com/v1')
+      assert(mm?.id === 'minimax' && mm.icon === 'minimax', 'minimax 识别失败')
       const local = detectVendor('http://localhost:8080')
       assert(local?.id === 'local', '通用本地端点识别失败')
       const unknown = detectVendor('https://a.example.com')
@@ -317,6 +324,48 @@ export async function runSelfTest(): Promise<void> {
       assert(reloaded.providers.every((p) => p.id !== pb.id), '供应商B 应被删除')
     })
 
+    await step('克隆供应商：新 id、名称加副本、字段一致、紧跟原条目', async () => {
+      const copy = await cloneProvider(pa.id)
+      assert(copy.id !== pa.id, '克隆应有新 id')
+      assert(copy.name === `${pa.name} 副本`, `克隆名称应为「${pa.name} 副本」，实际 ${copy.name}`)
+      assert(copy.baseUrl === pa.baseUrl && copy.apiKey === pa.apiKey && copy.keyType === pa.keyType, '克隆字段应与原条目一致')
+      const s = loadStore()
+      const i = s.providers.findIndex((p) => p.id === pa.id)
+      assert(s.providers[i + 1]?.id === copy.id, '克隆应紧跟原条目之后')
+      let rejected = false
+      try {
+        await cloneProvider('no-such-id')
+      } catch {
+        rejected = true
+      }
+      assert(rejected, '克隆不存在的 id 应报错')
+    })
+
+    await step('拖拽排序：重排 Claude 顺序并持久化，Codex 不受影响，非法参数拒绝', async () => {
+      const s = loadStore()
+      const claudeIds = s.providers.filter((p) => p.tool === 'claude').map((p) => p.id)
+      assert(claudeIds.length >= 3, `排序前 Claude 应 ≥ 3 条，实际 ${claudeIds.length}`)
+      const rotated = [claudeIds[claudeIds.length - 1], ...claudeIds.slice(0, -1)]
+      await reorderProviders('claude', rotated)
+      const after = loadStore().providers.filter((p) => p.tool === 'claude').map((p) => p.id)
+      assert(JSON.stringify(after) === JSON.stringify(rotated), '重排后的顺序未持久化')
+      const reloaded = loadStore()
+      assert(reloaded.providers.some((p) => p.id === pc.id), 'Codex 条目不应丢失')
+      assert(reloaded.providers.filter((p) => p.tool === 'claude').length === claudeIds.length, 'Claude 条目数应不变')
+      // 非法参数：数量不符 / 重复 id / 混入其它工具的 id
+      const bads = [claudeIds.slice(0, 1), [...claudeIds, claudeIds[0]], [...claudeIds.slice(0, -1), pc.id]]
+      for (let i = 0; i < bads.length; i++) {
+        let rejected = false
+        try {
+          await reorderProviders('claude', bads[i])
+        } catch {
+          rejected = true
+        }
+        assert(rejected, `非法排序参数 #${i + 1} 应被拒绝`)
+      }
+      await reorderProviders('claude', claudeIds)
+    })
+
     const bakFile = path.join(home, 'selftest-backup.ccslbak')
     await step('加密备份导出：AES-256-GCM 文件生成且不含明文 Key', async () => {
       await exportBackupToFile(bakFile, 'selftest-pass-1234')
@@ -343,8 +392,10 @@ export async function runSelfTest(): Promise<void> {
     await step('加密备份导入：去重合并（删掉的供应商被找回，未删的跳过）', async () => {
       const s = loadStore()
       const before = s.providers.length
-      // 删掉一条再导入：备份里有它，应被找回（added=1），其余全部跳过
-      const victim = s.providers[0]
+      // 删掉一条再导入：备份里有它，应被找回（added=1），其余全部跳过。
+      // 注意选一条没有克隆体的（克隆与原条目 tool|baseUrl|apiKey 相同，会挡住去重）——pc 是 codex，克隆步骤只克隆了 claude 的 pa。
+      const victim = s.providers.find((p) => p.id === pc.id)
+      if (!victim) throw new Error('pc 应存在')
       s.providers = s.providers.filter((p) => p.id !== victim.id)
       await saveStore(s)
       const r = await importBackupFromFile(bakFile, 'selftest-pass-1234')

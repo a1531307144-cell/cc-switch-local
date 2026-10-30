@@ -24,6 +24,19 @@ export function VendorChip({ vendor }: { vendor: VendorInfo }) {
   )
 }
 
+/** 卡片主视觉：有内置图标用大号品牌图标，否则彩色字母方块兜底 */
+export function VendorLogo({ vendor, fallbackText }: { vendor: VendorInfo | null; fallbackText: string }) {
+  const url = vendor?.icon ? vendorIcons[`../assets/vendors/${vendor.icon}.svg`] : undefined
+  if (url) return <img className="vendor-logo" src={url} alt="" draggable={false} />
+  const letter = vendor?.letter ?? (fallbackText.trim().charAt(0).toUpperCase() || '?')
+  const color = vendor?.color ?? 'var(--accent)'
+  return (
+    <span className="vendor-tile" style={{ background: color }} aria-hidden>
+      {letter}
+    </span>
+  )
+}
+
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
     <div className="modal-overlay" onClick={onClose}>

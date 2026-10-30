@@ -1,9 +1,10 @@
 import { useState } from 'react'
+import type { DragEvent } from 'react'
 import type { BalanceResult, Lang, Provider, TestResult } from '../../../shared/types'
 import { t } from '../../../shared/i18n'
 import { detectVendor } from '../../../shared/vendors'
 import { buildProviderDeeplink } from '../../../main/deeplink'
-import { VendorChip } from './ui'
+import { VendorLogo } from './ui'
 
 function testBadge(r: TestResult, lang: Lang): { text: string; cls: string } {
   if (r.kind === 'ok') return { text: t(lang, 'test.ok', { ms: r.latencyMs ?? 0 }), cls: 'ok' }
@@ -12,36 +13,53 @@ function testBadge(r: TestResult, lang: Lang): { text: string; cls: string } {
   return { text: t(lang, 'test.network', { msg: r.message ?? '' }), cls: 'err' }
 }
 
+/**
+ * 图标优先的紧凑卡片（v0.8.0）：卡面只保留厂商图标 + 名称，
+ * Key/端点/备注等细节收进「⋯」菜单和编辑对话框；卡片可拖拽排序。
+ */
 export default function ProviderCard({
   provider,
   lang,
   isCurrent,
   busy,
+  dragging,
+  dropTarget,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
   onSwitch,
   onEdit,
+  onClone,
   onDelete
 }: {
   provider: Provider
   lang: Lang
   isCurrent: boolean
   busy: boolean
+  dragging: boolean
+  dropTarget: boolean
+  onDragStart: (id: string, e: DragEvent) => void
+  onDragOver: (id: string, e: DragEvent) => void
+  onDrop: (id: string, e: DragEvent) => void
+  onDragEnd: () => void
   onSwitch: (p: Provider) => void
   onEdit: (p: Provider) => void
+  onClone: (p: Provider) => void
   onDelete: (p: Provider) => void
 }) {
-  const [confirming, setConfirming] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<TestResult | null>(null)
   const [balance, setBalance] = useState<BalanceResult | null>(null)
   const [checking, setChecking] = useState(false)
-  const maskedKey = provider.apiKey.length <= 8 ? '****' : `${provider.apiKey.slice(0, 4)}****${provider.apiKey.slice(-4)}`
   const vendor = detectVendor(provider.baseUrl)
-  // 余额查询只对有官方余额接口的三家显示按钮（不把 Key 发给第三方）
+  // 余额查询只对有官方余额接口的三家显示（不把 Key 发给第三方）
   const balanceAvailable = vendor?.id === 'deepseek' || vendor?.id === 'moonshot' || vendor?.id === 'openrouter'
 
   const runTest = async () => {
     setTesting(true)
-    setResult(null)
+    setBalance(null)
     try {
       setResult(
         await window.api.providerTest({
@@ -61,7 +79,7 @@ export default function ProviderCard({
 
   const runBalance = async () => {
     setChecking(true)
-    setBalance(null)
+    setResult(null)
     try {
       setBalance(await window.api.balanceGet({ baseUrl: provider.baseUrl, apiKey: provider.apiKey }))
     } catch (e) {
@@ -82,89 +100,138 @@ export default function ProviderCard({
     })
     try {
       await navigator.clipboard.writeText(link)
-      alert(t(lang, 'card.linkCopied'))
+      window.alert(t(lang, 'card.linkCopied'))
     } catch {
       /* 剪贴板不可用时静默 */
     }
   }
 
+  let note: { text: string; cls: string } | null = null
+  if (result) note = testBadge(result, lang)
+  else if (balance) {
+    note = balance.ok
+      ? { text: t(lang, 'card.balanceShow', { balance: balance.balance ?? 0, currency: balance.currency ?? '' }), cls: 'ok' }
+      : { text: balance.message ?? '', cls: 'err' }
+  }
+
   return (
-    <div className={`card provider ${isCurrent ? 'current' : ''}`}>
-      <div className="row">
-        <div className="title">
-          <strong>{provider.name}</strong>
-          {vendor && <VendorChip vendor={vendor} />}
-          {isCurrent && <span className="badge accent">{t(lang, 'card.inUse')}</span>}
-          {provider.tool === 'claude' ? (
-            <span className="badge">{provider.keyType === 'api_key' ? 'ANTHROPIC_API_KEY' : 'ANTHROPIC_AUTH_TOKEN'}</span>
-          ) : (
-            <span className="badge">wire_api: {provider.wireApi ?? 'responses'}</span>
-          )}
-          {provider.model && <span className="badge">model: {provider.model}</span>}
-        </div>
-        <div className="actions">
-          {isCurrent ? (
-            <button className="btn primary sm" disabled>
-              {t(lang, 'card.inUse')}
-            </button>
-          ) : (
-            <button className="btn primary sm" disabled={busy} onClick={() => onSwitch(provider)}>
-              {busy ? t(lang, 'card.switching') : t(lang, 'card.enable')}
-            </button>
-          )}
-          <button className="btn sm" disabled={testing} onClick={runTest}>
-            {testing ? t(lang, 'card.testing') : t(lang, 'card.test')}
+    <div
+      className={`pcard${isCurrent ? ' current' : ''}${dragging ? ' dragging' : ''}${dropTarget ? ' drop' : ''}`}
+      draggable
+      onDragStart={(e) => onDragStart(provider.id, e)}
+      onDragOver={(e) => onDragOver(provider.id, e)}
+      onDrop={(e) => onDrop(provider.id, e)}
+      onDragEnd={onDragEnd}
+    >
+      {isCurrent && <span className="pcard-inuse">{t(lang, 'card.inUse')}</span>}
+      <div className="pcard-logo">
+        <VendorLogo vendor={vendor} fallbackText={provider.name} />
+      </div>
+      <div className="pcard-name" title={provider.name}>
+        {provider.name}
+      </div>
+      {vendor && <div className="pcard-sub">{vendor.name}</div>}
+      {note && (
+        <button type="button" className={`pcard-note ${note.cls}`} title={note.text} onClick={() => { setResult(null); setBalance(null) }}>
+          {note.text}
+        </button>
+      )}
+      <div className="pcard-actions">
+        {isCurrent ? (
+          <button className="btn primary sm" disabled>
+            {t(lang, 'card.inUse')}
           </button>
-          {balanceAvailable && (
-            <button className="btn sm" disabled={checking} onClick={runBalance}>
-              {checking ? t(lang, 'card.balanceChecking') : t(lang, 'card.balance')}
-            </button>
-          )}
-          <button className="btn sm" onClick={() => onEdit(provider)}>
-            {t(lang, 'card.edit')}
+        ) : (
+          <button className="btn primary sm" disabled={busy} onClick={() => onSwitch(provider)}>
+            {busy ? t(lang, 'card.switching') : t(lang, 'card.enable')}
           </button>
-          {confirming ? (
-            <>
+        )}
+        <div
+          className="dd"
+          onBlur={() => {
+            window.setTimeout(() => setMenuOpen(false), 120)
+          }}
+        >
+          <button
+            type="button"
+            className="btn sm icon-btn"
+            title={t(lang, 'card.more')}
+            aria-label={t(lang, 'card.more')}
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            ⋯
+          </button>
+          {menuOpen && (
+            <div className="menu">
               <button
-                className="btn danger sm"
+                type="button"
+                className="menu-item"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  setConfirming(false)
-                  onDelete(provider)
+                  setMenuOpen(false)
+                  onEdit(provider)
                 }}
               >
-                {t(lang, 'card.confirmDelete')}
+                {t(lang, 'card.edit')}
               </button>
-              <button className="btn sm" onClick={() => setConfirming(false)}>
-                {t(lang, 'btn.cancel')}
+              <button
+                type="button"
+                className="menu-item"
+                onMouseDown={(e) => e.preventDefault()}
+                disabled={testing}
+                onClick={() => void runTest()}
+              >
+                {testing ? t(lang, 'card.testing') : t(lang, 'card.test')}
               </button>
-            </>
-          ) : (
-            <button className="btn sm" onClick={() => setConfirming(true)}>
-              {t(lang, 'card.delete')}
-            </button>
+              {balanceAvailable && (
+                <button
+                  type="button"
+                  className="menu-item"
+                  onMouseDown={(e) => e.preventDefault()}
+                  disabled={checking}
+                  onClick={() => void runBalance()}
+                >
+                  {checking ? t(lang, 'card.balanceChecking') : t(lang, 'card.balance')}
+                </button>
+              )}
+              <button
+                type="button"
+                className="menu-item"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setMenuOpen(false)
+                  void copyLink()
+                }}
+              >
+                {t(lang, 'card.copyLink')}
+              </button>
+              <button
+                type="button"
+                className="menu-item"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setMenuOpen(false)
+                  onClone(provider)
+                }}
+              >
+                {t(lang, 'card.clone')}
+              </button>
+              <div className="menu-sep" />
+              <button
+                type="button"
+                className="menu-item danger"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setMenuOpen(false)
+                  if (window.confirm(t(lang, 'card.confirmDeleteMsg', { name: provider.name }))) onDelete(provider)
+                }}
+              >
+                {t(lang, 'card.delete')}
+              </button>
+            </div>
           )}
         </div>
       </div>
-      <div className="meta">
-        <code className="url">{provider.baseUrl}</code>
-        <span className="key">
-          {t(lang, 'card.keyLabel')}
-          {maskedKey}
-        </span>
-        <button className="btn ghost sm copy-link" onClick={() => void copyLink()} title={t(lang, 'card.copyLink')}>
-          {t(lang, 'card.copyLink')}
-        </button>
-      </div>
-      {provider.notes && <div className="notes">{provider.notes}</div>}
-      {result && <div className={`test-result ${testBadge(result, lang).cls}`}>{testBadge(result, lang).text}</div>}
-      {balance &&
-        (balance.ok ? (
-          <div className="test-result ok">
-            {t(lang, 'card.balanceShow', { balance: balance.balance ?? 0, currency: balance.currency ?? '' })}
-          </div>
-        ) : (
-          <div className="test-result err">{balance.message}</div>
-        ))}
     </div>
   )
 }

@@ -13,6 +13,8 @@ export const STRINGS = {
   'app.initFail': { zh: '初始化失败', en: 'Initialization failed' },
   'side.usage': { zh: '用量统计', en: 'Usage' },
   'side.settings': { zh: '设置', en: 'Settings' },
+  'side.collapse': { zh: '收起侧栏', en: 'Collapse sidebar' },
+  'side.expand': { zh: '展开侧栏', en: 'Expand sidebar' },
   'side.privacy1': { zh: '数据仅存本机 · 无遥测', en: 'Data stays local · no telemetry' },
   'side.privacy2': { zh: '每次写入前自动备份', en: 'Auto backup before every write' },
 
@@ -73,7 +75,16 @@ export const STRINGS = {
   'update.latestToast': { zh: '已是最新版本', en: 'Up to date' },
   'update.foundToast': { zh: '发现新版本 v{v}', en: 'New version v{v} found' },
 
-  // ── 供应商卡片 ──
+  // ── 供应商区（功能区：页头操作 + 卡片网格） ──
+  'zone.import': { zh: '导入', en: 'Import' },
+  'zone.searchPh': { zh: '搜索供应商…', en: 'Search providers…' },
+  'zone.dragHint': { zh: '拖动卡片可调整顺序，把最常用的放最前面', en: 'Drag cards to reorder — put favorites first' },
+  'zone.noneMatch': { zh: '没有匹配「{q}」的供应商', en: 'No providers match "{q}"' },
+
+  // ── 供应商卡片（图标优先的紧凑卡片） ──
+  'card.more': { zh: '更多操作', en: 'More actions' },
+  'card.clone': { zh: '克隆', en: 'Clone' },
+  'card.confirmDeleteMsg': { zh: '确定删除「{name}」吗？', en: 'Delete "{name}"?' },
   'card.inUse': { zh: '使用中', en: 'In use' },
   'card.enable': { zh: '启用', en: 'Enable' },
   'card.switching': { zh: '切换中…', en: 'Switching…' },
@@ -130,6 +141,7 @@ export const STRINGS = {
     en: 'Official login restored (proxy keys removed).'
   },
   'toast.deleted': { zh: '已删除「{name}」', en: 'Deleted "{name}"' },
+  'toast.cloned': { zh: '已克隆「{name}」', en: 'Cloned "{name}"' },
   'toast.importNone': { zh: '没有需要导入的新供应商。{detail}', en: 'Nothing new to import. {detail}' },
   'toast.imported': { zh: '成功从 cc-switch 导入 {n} 条供应商', en: 'Imported {n} providers from cc-switch' },
 

@@ -10,6 +10,7 @@ import { backupExport, backupImport } from './backup'
 import { usageStats } from './usage'
 import { routerEnabled, routerStatus, startRouter, stopRouter } from './router'
 import { fetchBalance } from './balance'
+import { cloneProvider, reorderProviders } from './library'
 import { clearAppData } from './cleardata'
 import { findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
 import { PRESETS } from './presets'
@@ -201,6 +202,18 @@ function registerIpc(): void {
     return true
   })
 
+  ipcMain.handle('provider:clone', async (_e, id: string) => {
+    const copy = await cloneProvider(id)
+    refreshTray()
+    return copy
+  })
+
+  ipcMain.handle('providers:reorder', async (_e, tool: ToolId, ids: string[]) => {
+    await reorderProviders(tool, ids)
+    refreshTray()
+    return true
+  })
+
   ipcMain.handle('provider:switch', async (_e, tool: ToolId, id: string | null) => {
     const store = loadStore()
     let provider: Provider | null = null
@@ -299,6 +312,9 @@ function registerIpc(): void {
     const store = loadStore()
     if (patch.language !== undefined && patch.language !== 'zh' && patch.language !== 'en') {
       throw new Error('非法的语言')
+    }
+    if (patch.sidebarCollapsed !== undefined && typeof patch.sidebarCollapsed !== 'boolean') {
+      throw new Error('非法的侧栏折叠状态')
     }
     store.settings = { ...store.settings, ...patch }
     await saveStore(store)

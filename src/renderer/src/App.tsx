@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { DragEvent } from 'react'
 import type { DeeplinkResult, Lang, Provider, RouterStatus, StoreShape, ToolId, ToolStatus } from '../../shared/types'
 import { t } from '../../shared/i18n'
+import { detectVendor } from '../../shared/vendors'
 import ProviderCard from './components/ProviderCard'
 import ProviderForm, { emptyDraft, type FormDraft } from './components/ProviderForm'
 import SettingsPanel from './components/SettingsPanel'
 import UsageDashboard from './components/UsageDashboard'
+import { IconChart, IconChevronLeft, IconChevronRight, IconGear, IconSearch } from './components/Icons'
 import logoUrl from './assets/logo.png'
 
 type View = ToolId | 'usage' | 'settings'
@@ -32,9 +35,14 @@ export default function App() {
   const [updatePercent, setUpdatePercent] = useState(0)
   const [updateBytes, setUpdateBytes] = useState<{ transferred: number; total: number; bps: number } | null>(null)
   const [updateError, setUpdateError] = useState('')
+  const [query, setQuery] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [overId, setOverId] = useState<string | null>(null)
 
   const lang: Lang = store?.settings.language === 'en' ? 'en' : 'zh'
   const tr = useCallback((key: Parameters<typeof t>[1], vars?: Record<string, string | number>) => t(lang, key, vars), [lang])
+  const collapsed = store?.settings.sidebarCollapsed === true
 
   const fmtMB = (n: number): string => `${(n / 1048576).toFixed(1)} MB`
 
@@ -162,6 +170,22 @@ export default function App() {
   const currentId = toolView ? store.current[activeTool] : null
   const providers = toolView ? store.providers.filter((p) => p.tool === activeTool) : []
   const currentProvider = providers.find((p) => p.id === currentId) ?? null
+  const q = query.trim().toLowerCase()
+  const shown =
+    q === ''
+      ? providers
+      : providers.filter(
+          (p) => p.name.toLowerCase().includes(q) || (detectVendor(p.baseUrl)?.name ?? '').toLowerCase().includes(q)
+        )
+
+  const toggleSidebar = async () => {
+    try {
+      await window.api.settingsUpdate({ sidebarCollapsed: !collapsed })
+      await refresh()
+    } catch (e) {
+      notify((e as Error).message, 'err')
+    }
+  }
 
   const switchTo = async (p: Provider | null) => {
     const tool = p ? p.tool : activeTool
@@ -189,6 +213,57 @@ export default function App() {
     } catch (e) {
       notify((e as Error).message, 'err')
     }
+  }
+
+  const clone = async (p: Provider) => {
+    try {
+      const copy = await window.api.providerClone(p.id)
+      notify(tr('toast.cloned', { name: copy.name }))
+      await refresh()
+    } catch (e) {
+      notify((e as Error).message, 'err')
+    }
+  }
+
+  /** 拖拽排序：乐观更新本地状态，再持久化（失败时 refresh 拉回真实顺序） */
+  const reorder = async (fromId: string, toId: string) => {
+    const ids = providers.map((p) => p.id)
+    const from = ids.indexOf(fromId)
+    const to = ids.indexOf(toId)
+    if (from < 0 || to < 0 || from === to) return
+    ids.splice(to, 0, ids.splice(from, 1)[0])
+    const next = ids.map((id) => providers.find((p) => p.id === id)!)
+    let k = 0
+    setStore({ ...store, providers: store.providers.map((p) => (p.tool === activeTool ? next[k++] : p)) })
+    try {
+      await window.api.providersReorder(activeTool, ids)
+    } catch (e) {
+      notify((e as Error).message, 'err')
+    } finally {
+      await refresh()
+    }
+  }
+
+  const handleDragStart = (id: string, e: DragEvent) => {
+    setDragId(id)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id)
+  }
+  const handleDragOver = (id: string, e: DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (id !== dragId) setOverId(id)
+  }
+  const handleDrop = (id: string, e: DragEvent) => {
+    e.preventDefault()
+    const src = dragId ?? e.dataTransfer.getData('text/plain')
+    setOverId(null)
+    setDragId(null)
+    if (src && src !== id) void reorder(src, id)
+  }
+  const handleDragEnd = () => {
+    setOverId(null)
+    setDragId(null)
   }
 
   const save = async (d: FormDraft) => {
@@ -277,197 +352,271 @@ export default function App() {
         <span className="titlebar-title">CC Switch Local</span>
       </div>
       <div className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          <img className="logo-img" src={logoUrl} alt="" draggable={false} />
-          <div>
-            <div className="brand-name">CC Switch Local</div>
-            <div className="brand-sub">{tr('app.subtitle')}</div>
-          </div>
-        </div>
-        {TOOLS.map((tl) => (
-          <button key={tl.id} className={`nav ${view === tl.id ? 'active' : ''}`} onClick={() => setView(tl.id)}>
-            <span>{tl.label}</span>
-            <span className="count">{store.providers.filter((p) => p.tool === tl.id).length}</span>
-          </button>
-        ))}
-        <button className={`nav ${view === 'usage' ? 'active' : ''}`} onClick={() => setView('usage')}>
-          <span>{tr('side.usage')}</span>
-        </button>
-        <button className={`nav ${view === 'settings' ? 'active' : ''}`} onClick={() => setView('settings')}>
-          <span>{tr('side.settings')}</span>
-        </button>
-        <div className="sidebar-foot">
-          <p className="muted small">{tr('side.privacy1')}</p>
-          <p className="muted small">{tr('side.privacy2')}</p>
-        </div>
-      </aside>
-
-      <main className="main">
-        {updateState === 'available' && (
-          <div className="update-banner">
-            <span>{tr('update.available', { v: updateVersion })}</span>
-            <div className="btn-row">
-              <button className="btn primary sm" onClick={startDownload}>
-                {tr('update.downloadNow')}
-              </button>
-              <button className="btn ghost sm" onClick={() => setUpdateState('idle')}>
-                {tr('update.later')}
-              </button>
-            </div>
-          </div>
-        )}
-        {updateState === 'downloading' && (
-          <div className="update-banner">
-            <span>
-              {tr('update.downloading', { v: updateVersion })}
-              {updateBytes ? (
-                <>
-                  {' '}
-                  {fmtMB(updateBytes.transferred)} / {fmtMB(updateBytes.total)}
-                  {updateBytes.bps > 0 ? `（${fmtMB(updateBytes.bps)}/s）` : ''}
-                </>
-              ) : (
-                ` ${updatePercent}%`
-              )}
-            </span>
-            <div className="update-download-row">
-              <div className="update-bar">
-                <div className="update-bar-fill" style={{ width: `${updatePercent}%` }} />
+        <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
+          <div className="brand">
+            <img className="logo-img" src={logoUrl} alt="" draggable={false} />
+            {!collapsed && (
+              <div>
+                <div className="brand-name">CC Switch Local</div>
+                <div className="brand-sub">{tr('app.subtitle')}</div>
               </div>
-              <button className="btn ghost sm" onClick={cancelDownload}>
-                {tr('update.later')}
-              </button>
-            </div>
+            )}
           </div>
-        )}
-        {updateState === 'downloaded' && (
-          <div className="update-banner">
-            <span>{tr('update.ready')}</span>
-            <button className="btn primary sm" onClick={() => void window.api.updateInstall()}>
-              {tr('update.restartInstall')}
+          {TOOLS.map((tl) => (
+            <button
+              key={tl.id}
+              type="button"
+              className={`nav${view === tl.id ? ' active' : ''}`}
+              onClick={() => setView(tl.id)}
+              title={collapsed ? tl.label : undefined}
+            >
+              {collapsed ? <span className="nav-chip">{tl.id === 'claude' ? 'CC' : 'CX'}</span> : <span>{tl.label}</span>}
+              {!collapsed && <span className="count">{store.providers.filter((p) => p.tool === tl.id).length}</span>}
+            </button>
+          ))}
+          <div className="nav-divider" />
+          <button
+            type="button"
+            className={`nav icon${view === 'usage' ? ' active' : ''}`}
+            onClick={() => setView('usage')}
+            title={collapsed ? tr('side.usage') : undefined}
+          >
+            <IconChart />
+            {!collapsed && <span>{tr('side.usage')}</span>}
+          </button>
+          <button
+            type="button"
+            className={`nav icon${view === 'settings' ? ' active' : ''}`}
+            onClick={() => setView('settings')}
+            title={collapsed ? tr('side.settings') : undefined}
+          >
+            <IconGear />
+            {!collapsed && <span>{tr('side.settings')}</span>}
+          </button>
+          <div className="sidebar-foot">
+            {!collapsed && (
+              <>
+                <p className="muted small">{tr('side.privacy1')}</p>
+                <p className="muted small">{tr('side.privacy2')}</p>
+              </>
+            )}
+            <button
+              type="button"
+              className={`nav icon${collapsed ? ' icon-only' : ''}`}
+              onClick={() => void toggleSidebar()}
+              title={collapsed ? tr('side.expand') : tr('side.collapse')}
+            >
+              {collapsed ? <IconChevronRight /> : <><IconChevronLeft /><span>{tr('side.collapse')}</span></>}
             </button>
           </div>
-        )}
-        {updateError && (
-          <div className="update-banner err">
-            <span>{updateError}</span>
-            <div className="btn-row">
-              <button className="btn sm" onClick={() => void window.api.openReleases()}>
-                {tr('update.openReleases')}
-              </button>
-              <button className="btn ghost sm" onClick={() => setUpdateError('')}>
-                {tr('update.close')}
-              </button>
-            </div>
-          </div>
-        )}
-        {toolView && (
-          <>
-            <div className="toolbar">
-              <div>
-                <h2>{TOOL_LABEL[activeTool]}</h2>
-                <p className="muted small">{activeTool === 'claude' ? tr('tool.hint.claude') : tr('tool.hint.codex')}</p>
-              </div>
-              <div className="btn-row">
-                <button
-                  className={`btn sm ${routerState?.[activeTool]?.enabled ? 'primary' : ''}`}
-                  onClick={toggleRouter}
-                  title={
-                    routerState?.running
-                      ? tr('router.tipOn', { port: routerState.port, req: routerState[activeTool].requests, err: routerState[activeTool].errors })
-                      : tr('router.tipOff')
-                  }
-                >
-                  {routerState?.[activeTool]?.enabled ? tr('router.on') : tr('router.off')}
-                </button>
-                <button className="btn sm" onClick={() => importCurrent(activeTool)}>
-                  {tr('tool.importCurrent')}
-                </button>
-                {activeTool === 'claude' && (
-                  <button className="btn sm" onClick={importCcSwitch} disabled={importing}>
-                    {importing ? tr('tool.importing') : tr('tool.importCcSwitch')}
-                  </button>
-                )}
-                <button className="btn primary sm" onClick={() => setDraft(emptyDraft(activeTool))}>
-                  {tr('tool.new')}
-                </button>
-              </div>
-            </div>
+        </aside>
 
-            <div className={`status-bar ${currentId ? 'managed' : ''}`}>
+        <main className="main">
+          {updateState === 'available' && (
+            <div className="update-banner">
+              <span>{tr('update.available', { v: updateVersion })}</span>
+              <div className="btn-row">
+                <button className="btn primary sm" onClick={startDownload}>
+                  {tr('update.downloadNow')}
+                </button>
+                <button className="btn ghost sm" onClick={() => setUpdateState('idle')}>
+                  {tr('update.later')}
+                </button>
+              </div>
+            </div>
+          )}
+          {updateState === 'downloading' && (
+            <div className="update-banner">
               <span>
-                {currentId && currentProvider ? (
+                {tr('update.downloading', { v: updateVersion })}
+                {updateBytes ? (
                   <>
-                    {tr('tool.statusActive')}
-                    <strong>{currentProvider.name}</strong>
-                    {tr('tool.managed')}
-                  </>
-                ) : status[activeTool].currentBaseUrl ? (
-                  <>
-                    {tr('tool.external')}
-                    {status[activeTool].currentBaseUrl}
+                    {' '}
+                    {fmtMB(updateBytes.transferred)} / {fmtMB(updateBytes.total)}
+                    {updateBytes.bps > 0 ? `（${fmtMB(updateBytes.bps)}/s）` : ''}
                   </>
                 ) : (
-                  tr('tool.unmanaged')
+                  ` ${updatePercent}%`
                 )}
               </span>
-              <button className="btn ghost sm" onClick={() => switchTo(null)} disabled={busyTool !== null}>
-                {tr('tool.restoreOfficial')}
+              <div className="update-download-row">
+                <div className="update-bar">
+                  <div className="update-bar-fill" style={{ width: `${updatePercent}%` }} />
+                </div>
+                <button className="btn ghost sm" onClick={cancelDownload}>
+                  {tr('update.later')}
+                </button>
+              </div>
+            </div>
+          )}
+          {updateState === 'downloaded' && (
+            <div className="update-banner">
+              <span>{tr('update.ready')}</span>
+              <button className="btn primary sm" onClick={() => void window.api.updateInstall()}>
+                {tr('update.restartInstall')}
               </button>
             </div>
-
-            <div
-              className="path-line muted small"
-              onClick={() => window.api.openPath(activeTool === 'claude' ? 'claudeConfig' : 'codexConfig')}
-              title={tr('tool.configDir', { path: '' })}
-            >
-              {tr('tool.configDir', { path: status[activeTool].configPath || '…' })}
+          )}
+          {updateError && (
+            <div className="update-banner err">
+              <span>{updateError}</span>
+              <div className="btn-row">
+                <button className="btn sm" onClick={() => void window.api.openReleases()}>
+                  {tr('update.openReleases')}
+                </button>
+                <button className="btn ghost sm" onClick={() => setUpdateError('')}>
+                  {tr('update.close')}
+                </button>
+              </div>
             </div>
+          )}
 
-            <div className="list">
+          {toolView && (
+            <>
+              <div className="page-head">
+                <div className="page-head-main">
+                  <h2 title={activeTool === 'claude' ? tr('tool.hint.claude') : tr('tool.hint.codex')}>
+                    {TOOL_LABEL[activeTool]}
+                  </h2>
+                  <p className="muted small">
+                    {currentId && currentProvider ? (
+                      <>
+                        {tr('tool.statusActive')}
+                        <strong>{currentProvider.name}</strong>
+                        {tr('tool.managed')}
+                        <button className="link-btn" onClick={() => void switchTo(null)} disabled={busyTool !== null}>
+                          {tr('tool.restoreOfficial')}
+                        </button>
+                      </>
+                    ) : status[activeTool].currentBaseUrl ? (
+                      <>
+                        {tr('tool.external')}
+                        {status[activeTool].currentBaseUrl}
+                      </>
+                    ) : (
+                      tr('tool.unmanaged')
+                    )}
+                  </p>
+                </div>
+                <div className="page-head-actions">
+                  <button
+                    type="button"
+                    className={`btn sm ${routerState?.[activeTool]?.enabled ? 'primary' : ''}`}
+                    onClick={toggleRouter}
+                    title={
+                      routerState?.running
+                        ? tr('router.tipOn', { port: routerState.port, req: routerState[activeTool].requests, err: routerState[activeTool].errors })
+                        : tr('router.tipOff')
+                    }
+                  >
+                    {routerState?.[activeTool]?.enabled ? tr('router.on') : tr('router.off')}
+                  </button>
+                  <div
+                    className="dd"
+                    onBlur={() => {
+                      window.setTimeout(() => setImportOpen(false), 120)
+                    }}
+                  >
+                    <button type="button" className="btn sm" onClick={() => setImportOpen((v) => !v)}>
+                      {tr('zone.import')} ▾
+                    </button>
+                    {importOpen && (
+                      <div className="menu">
+                        <button
+                          type="button"
+                          className="menu-item"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setImportOpen(false)
+                            void importCurrent(activeTool)
+                          }}
+                        >
+                          {tr('tool.importCurrent')}
+                        </button>
+                        {activeTool === 'claude' && (
+                          <button
+                            type="button"
+                            className="menu-item"
+                            onMouseDown={(e) => e.preventDefault()}
+                            disabled={importing}
+                            onClick={() => {
+                              setImportOpen(false)
+                              void importCcSwitch()
+                            }}
+                          >
+                            {importing ? tr('tool.importing') : tr('tool.importCcSwitch')}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="search">
+                    <IconSearch />
+                    <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr('zone.searchPh')} />
+                  </div>
+                  <button type="button" className="btn primary sm" onClick={() => setDraft(emptyDraft(activeTool))}>
+                    {tr('tool.new')}
+                  </button>
+                </div>
+              </div>
+
               {providers.length === 0 ? (
                 <div className="empty">
                   <p>{tr('tool.emptyTitle', { tool: TOOL_LABEL[activeTool] })}</p>
                   <p className="muted small">{tr('tool.emptyHint')}</p>
                 </div>
+              ) : shown.length === 0 ? (
+                <div className="empty">
+                  <p>{tr('zone.noneMatch', { q: query.trim() })}</p>
+                </div>
               ) : (
-                providers.map((p) => (
-                  <ProviderCard
-                    key={p.id}
-                    provider={p}
-                    lang={lang}
-                    isCurrent={p.id === currentId}
-                    busy={busyTool === p.tool}
-                    onSwitch={switchTo}
-                    onEdit={(x) =>
-                      setDraft({
-                        ...emptyDraft(x.tool),
-                        id: x.id,
-                        name: x.name,
-                        baseUrl: x.baseUrl,
-                        apiKey: x.apiKey,
-                        keyType: x.keyType,
-                        model: x.model ?? '',
-                        wireApi: x.wireApi ?? 'responses',
-                        notes: x.notes ?? ''
-                      })
-                    }
-                    onDelete={del}
-                  />
-                ))
+                <>
+                  {providers.length > 1 && <div className="drag-hint muted small">{tr('zone.dragHint')}</div>}
+                  <div className="provider-grid">
+                    {shown.map((p) => (
+                      <ProviderCard
+                        key={p.id}
+                        provider={p}
+                        lang={lang}
+                        isCurrent={p.id === currentId}
+                        busy={busyTool === p.tool}
+                        dragging={dragId === p.id}
+                        dropTarget={overId === p.id}
+                        onDragStart={handleDragStart}
+                        onDragOver={handleDragOver}
+                        onDrop={handleDrop}
+                        onDragEnd={handleDragEnd}
+                        onSwitch={switchTo}
+                        onEdit={(x) =>
+                          setDraft({
+                            ...emptyDraft(x.tool),
+                            id: x.id,
+                            name: x.name,
+                            baseUrl: x.baseUrl,
+                            apiKey: x.apiKey,
+                            keyType: x.keyType,
+                            model: x.model ?? '',
+                            wireApi: x.wireApi ?? 'responses',
+                            notes: x.notes ?? ''
+                          })
+                        }
+                        onClone={clone}
+                        onDelete={del}
+                      />
+                    ))}
+                  </div>
+                </>
               )}
-            </div>
-          </>
-        )}
-        {view === 'usage' && <UsageDashboard lang={lang} notify={notify} />}
-        {view === 'settings' && (
-          <SettingsPanel store={store} lang={lang} onChanged={refresh} notify={notify} onCheckUpdate={runCheck} updateChecking={updateState === 'checking'} />
-        )}
-      </main>
+            </>
+          )}
+          {view === 'usage' && <UsageDashboard lang={lang} notify={notify} />}
+          {view === 'settings' && (
+            <SettingsPanel store={store} lang={lang} onChanged={refresh} notify={notify} onCheckUpdate={runCheck} updateChecking={updateState === 'checking'} />
+          )}
+        </main>
 
-      {draft && <ProviderForm draft={draft} lang={lang} onClose={() => setDraft(null)} onSave={save} />}
-      {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
+        {draft && <ProviderForm draft={draft} lang={lang} onClose={() => setDraft(null)} onSave={save} />}
+        {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
       </div>
     </>
   )
