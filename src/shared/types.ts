@@ -2,6 +2,8 @@ export type ToolId = 'claude' | 'codex'
 export type KeyType = 'auth_token' | 'api_key'
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type Lang = 'zh' | 'en'
+/** 接口协议（claude 工具用）：anthropic=标准 Claude 端点；openai=OpenAI 兼容（经本机路由协议转换） */
+export type Protocol = 'anthropic' | 'openai'
 
 export interface Provider {
   id: string
@@ -11,6 +13,8 @@ export interface Provider {
   apiKey: string
   /** claude 用：写入 ANTHROPIC_AUTH_TOKEN 或 ANTHROPIC_API_KEY；codex 忽略（固定写 auth.json） */
   keyType: KeyType
+  /** claude 用：接口协议（缺省 anthropic）；openai 协议只能经本机路由使用（自动转换） */
+  protocol?: Protocol
   /** 可选：codex 会写入 config.toml 的 model；claude 仅作测试请求的模型名 */
   model?: string
   /** codex 专用：自定义 provider 的 wire_api */
@@ -27,6 +31,7 @@ export interface ProviderInput {
   baseUrl: string
   apiKey: string
   keyType?: KeyType
+  protocol?: Protocol
   model?: string
   wireApi?: 'responses' | 'chat'
   notes?: string
@@ -40,7 +45,7 @@ export interface AppSettings {
   language?: Lang
   /** 侧栏折叠（v0.8.0 起；缺省展开） */
   sidebarCollapsed?: boolean
-  /** 本机路由模式（每工具独立开关；port 缺省 15721；缺省 false） */
+  /** 本机路由模式（每工具独立开关；port 缺省 15731；缺省 false） */
   router?: { claude: boolean; codex: boolean; port?: number }
 }
 
@@ -107,6 +112,8 @@ export interface Preset {
   model?: string
   /** claude 预设：应使用的 env 键类型（缺省 auth_token） */
   keyType?: KeyType
+  /** claude 预设：接口协议（缺省 anthropic；openai = 经本机路由转换） */
+  protocol?: Protocol
   /** codex 预设：wire_api（缺省 responses） */
   wireApi?: 'responses' | 'chat'
   notes?: string
@@ -134,6 +141,7 @@ export interface TestInput {
   baseUrl: string
   apiKey: string
   keyType: KeyType
+  protocol?: 'anthropic' | 'openai'
   model?: string
 }
 

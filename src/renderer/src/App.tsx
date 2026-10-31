@@ -92,6 +92,7 @@ export default function App() {
           baseUrl: r.input.baseUrl,
           apiKey: '',
           keyType: r.input.keyType ?? 'auth_token',
+          protocol: 'anthropic',
           model: r.input.model ?? '',
           wireApi: r.input.wireApi ?? 'responses',
           notes: t(store?.settings.language === 'en' ? 'en' : 'zh', 'form.deeplinkNote')
@@ -274,6 +275,7 @@ export default function App() {
       baseUrl: d.baseUrl.trim(),
       apiKey: d.apiKey.trim(),
       keyType: d.keyType,
+      protocol: d.tool === 'claude' ? d.protocol : undefined,
       model: d.model.trim(),
       wireApi: d.wireApi,
       notes: d.notes.trim()
@@ -595,6 +597,7 @@ export default function App() {
                             baseUrl: x.baseUrl,
                             apiKey: x.apiKey,
                             keyType: x.keyType,
+                            protocol: x.tool === 'claude' ? x.protocol ?? 'anthropic' : 'anthropic',
                             model: x.model ?? '',
                             wireApi: x.wireApi ?? 'responses',
                             notes: x.notes ?? ''

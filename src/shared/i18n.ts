@@ -120,6 +120,14 @@ export const STRINGS = {
   'form.keyType': { zh: 'Key 类型', en: 'Key type' },
   'form.keyType.auth': { zh: 'ANTHROPIC_AUTH_TOKEN（绝大多数中转站）', en: 'ANTHROPIC_AUTH_TOKEN (most relays)' },
   'form.keyType.api': { zh: 'ANTHROPIC_API_KEY（官方 API 计费）', en: 'ANTHROPIC_API_KEY (official API billing)' },
+  'form.protocol': { zh: '接口协议', en: 'Protocol' },
+  'form.protocol.anthropic': { zh: 'Anthropic（标准 Claude 端点）', en: 'Anthropic (standard Claude endpoint)' },
+  'form.protocol.openai': { zh: 'OpenAI 兼容（经本机路由转换）', en: 'OpenAI-compatible (converted via local router)' },
+  'form.protocolHint': {
+    zh: 'OpenAI 兼容端点（Chat Completions）经本机路由做协议转换，启用时会自动开启路由；模型名必填',
+    en: 'OpenAI-compatible endpoints (Chat Completions) are converted through the local router, which starts automatically on switch; model name is required'
+  },
+  'form.err.model': { zh: 'OpenAI 兼容供应商需要填写模型名', en: 'Model name is required for OpenAI-compatible providers' },
   'form.modelCodex': { zh: '模型（写入 config.toml 的 model，可选）', en: 'Model (written to config.toml, optional)' },
   'form.modelClaude': { zh: '模型（仅用于连接测试，可选）', en: 'Model (for connection test only, optional)' },
   'form.notes': { zh: '备注（可选）', en: 'Notes (optional)' },
@@ -197,8 +205,8 @@ export const STRINGS = {
   },
   'set.router': { zh: '本机路由', en: 'Local router' },
   'set.routerDesc': {
-    zh: '在工具页用「本机路由」开关开启。开启后请求经 127.0.0.1 代理转发：切换供应商即时生效，上游故障（5xx / 429 / 连接失败）时按列表顺序自动转移——转移会在下一家重发同一请求，极端情况下可能重复计费。最简版仅透传 Anthropic/OpenAI 兼容端点，协议转换留待后续版本。',
-    en: 'Toggle per tool on its page. Requests go through a 127.0.0.1 proxy: provider switches apply instantly; upstream failures (5xx / 429 / connection errors) fail over in list order — the same request is resent to the next provider, which may cause duplicate billing in rare cases. Minimal version passes through Anthropic/OpenAI-compatible endpoints only; protocol conversion comes later.'
+    zh: '在工具页用「本机路由」开关开启。开启后请求经 127.0.0.1 代理转发：切换供应商即时生效，上游故障（5xx / 429 / 连接失败）时按列表顺序自动转移——转移会在下一家重发同一请求，极端情况下可能重复计费。支持协议转换：接口协议为「OpenAI 兼容」的 Claude 供应商自动经路由转换（Anthropic↔OpenAI，含流式与工具调用），使用时会自动开启路由。',
+    en: 'Toggle per tool on its page. Requests go through a 127.0.0.1 proxy: provider switches apply instantly; upstream failures (5xx / 429 / connection errors) fail over in list order — the same request is resent to the next provider, which may cause duplicate billing in rare cases. Protocol conversion is supported: Claude providers with the "OpenAI-compatible" protocol are converted through the router (Anthropic↔OpenAI, incl. streaming and tool calls); the router starts automatically when such a provider is enabled.'
   },
   'set.routerRunning': {
     zh: '状态：运行中（127.0.0.1:{port}）｜Claude 转发 {c} 次/失败 {cf} 次｜Codex 转发 {x} 次/失败 {xf} 次',

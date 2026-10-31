@@ -8,13 +8,14 @@ import { testProvider } from './test'
 import { importFromCcSwitch } from './importer'
 import { backupExport, backupImport } from './backup'
 import { usageStats } from './usage'
-import { routerEnabled, routerStatus, startRouter, stopRouter } from './router'
+import { routerStatus, startRouter, stopRouter } from './router'
 import { fetchBalance } from './balance'
 import { cloneProvider, reorderProviders, validateSettingsPatch } from './library'
 import { clearAppData } from './cleardata'
 import { findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
 import { PRESETS } from './presets'
 import { registerUpdateIpc, startupCheck } from './updater'
+import { switchProviderForTool } from './switcher'
 import { createTray, refreshTray } from './tray'
 import { runSelfTest } from './selftest'
 import { RELEASES_URL } from '../shared/constants'
@@ -128,6 +129,7 @@ function applySettings(settings: AppSettings): void {
 const TOOL_IDS: ToolId[] = ['claude', 'codex']
 const KEY_TYPES: string[] = ['auth_token', 'api_key']
 const WIRE_APIS: string[] = ['responses', 'chat']
+const PROTOCOLS: string[] = ['anthropic', 'openai']
 const isStr = (v: unknown): v is string => typeof v === 'string'
 
 /** tool 参数严格白名单：非 claude/codex 一律拒绝，绝不静默归到另一工具（2026-10-31 审计 P2） */
@@ -145,6 +147,7 @@ function validateProviderInput(input: ProviderInput): void {
   if (!isStr(input.apiKey) || input.apiKey.length > 4000) throw new Error('API Key 非法（长度 ≤ 4000）')
   if (input.keyType !== undefined && !KEY_TYPES.includes(input.keyType)) throw new Error('非法的 Key 类型')
   if (input.wireApi !== undefined && !WIRE_APIS.includes(input.wireApi)) throw new Error('非法的 wire_api')
+  if (input.protocol !== undefined && !PROTOCOLS.includes(input.protocol)) throw new Error('非法的接口协议')
   if (input.model !== undefined && (!isStr(input.model) || input.model.length > 200)) throw new Error('模型名过长')
   if (input.notes !== undefined && (!isStr(input.notes) || input.notes.length > 2000)) throw new Error('备注过长')
   if (input.id !== undefined && (!isStr(input.id) || input.id.length > 64)) throw new Error('非法的 id')
@@ -167,6 +170,7 @@ function registerIpc(): void {
         baseUrl: input.baseUrl,
         apiKey: input.apiKey,
         keyType: input.keyType ?? existing.keyType,
+        protocol: input.protocol ?? (existing.tool === 'claude' ? existing.protocol : undefined),
         model: input.model || undefined,
         wireApi: input.wireApi || undefined,
         notes: input.notes || undefined,
@@ -184,6 +188,7 @@ function registerIpc(): void {
       baseUrl: input.baseUrl,
       apiKey: input.apiKey,
       keyType: input.keyType ?? 'auth_token',
+      protocol: input.tool === 'claude' ? input.protocol ?? 'anthropic' : undefined,
       model: input.model || undefined,
       wireApi: input.wireApi || undefined,
       notes: input.notes || undefined,
@@ -227,10 +232,7 @@ function registerIpc(): void {
       provider = store.providers.find((p) => p.id === id && p.tool === tool) ?? null
       if (!provider) throw new Error('供应商不存在')
     }
-    const result =
-      tool === 'claude'
-        ? await claude.switchClaude(provider, routerEnabled(tool))
-        : await codex.switchCodex(provider, routerEnabled(tool))
+    const result = await switchProviderForTool(tool, provider)
     store.current[tool] = id
     await saveStore(store)
     refreshTray()
@@ -304,6 +306,13 @@ function registerIpc(): void {
     if (typeof enabled !== 'boolean') throw new Error('非法的开关值')
     const store = loadStore()
     if (enabled && !store.current[tool]) throw new Error('请先选择一个供应商，再开启本机路由')
+    if (!enabled && tool === 'claude' && store.current[tool]) {
+      // OpenAI 协议供应商只能经路由使用，不能关（先切换到别的供应商才能关）
+      const cur = store.providers.find((p) => p.id === store.current[tool])
+      if (cur?.protocol === 'openai') {
+        throw new Error('当前供应商是 OpenAI 兼容协议，必须经本机路由使用；请先切换到其它供应商')
+      }
+    }
     const router = { claude: store.settings.router?.claude ?? false, codex: store.settings.router?.codex ?? false }
     router[tool] = enabled
     const needRouter = router.claude || router.codex

@@ -77,6 +77,7 @@ export default function ProviderCard({
           baseUrl: provider.baseUrl,
           apiKey: provider.apiKey,
           keyType: provider.keyType,
+          protocol: provider.protocol,
           model: provider.model
         })
       )

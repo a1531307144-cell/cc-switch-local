@@ -13,7 +13,19 @@ export async function testProvider(input: TestInput): Promise<TestResult> {
   try {
     let url: string
     let init: { method: string; headers: Record<string, string>; body?: string }
-    if (input.tool === 'claude') {
+    if (input.tool === 'claude' && input.protocol === 'openai') {
+      // OpenAI 兼容供应商：按 Chat Completions 格式测（与路由转换后的真实形态一致）
+      url = `${base}/chat/completions`
+      init = {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${input.apiKey}` },
+        body: JSON.stringify({
+          model: input.model || 'gpt-4o-mini',
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'ping' }]
+        })
+      }
+    } else if (input.tool === 'claude') {
       url = `${base}/v1/messages`
       const headers: Record<string, string> = {
         'content-type': 'application/json',

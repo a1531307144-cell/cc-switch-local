@@ -8,6 +8,7 @@ import type { AppSettings, Provider, StoreShape, ToolId } from '../shared/types'
 const TOOL_IDS: ToolId[] = ['claude', 'codex']
 const KEY_TYPES = ['auth_token', 'api_key']
 const WIRE_APIS = ['responses', 'chat']
+const PROTOCOLS = ['anthropic', 'openai']
 
 /**
  * 逐条校验一条供应商记录（2026-10-31 审计 #8）：providers.json 可能被手改/半途损坏，
@@ -23,6 +24,7 @@ export function sanitizeProviderRecord(raw: unknown): Provider | null {
   if (typeof p.apiKey !== 'string' || !p.apiKey || p.apiKey.length > 4000) return null
   if (p.keyType !== undefined && !KEY_TYPES.includes(p.keyType as string)) return null
   if (p.wireApi !== undefined && !WIRE_APIS.includes(p.wireApi as string)) return null
+  if (p.protocol !== undefined && !PROTOCOLS.includes(p.protocol as string)) return null
   if (p.model !== undefined && (typeof p.model !== 'string' || p.model.length > 200)) return null
   if (p.notes !== undefined && (typeof p.notes !== 'string' || p.notes.length > 2000)) return null
   const now = Date.now()
@@ -33,6 +35,7 @@ export function sanitizeProviderRecord(raw: unknown): Provider | null {
     baseUrl: p.baseUrl,
     apiKey: p.apiKey,
     keyType: p.keyType === 'api_key' ? 'api_key' : 'auth_token',
+    protocol: p.protocol === 'openai' ? 'openai' : p.protocol === 'anthropic' ? 'anthropic' : undefined,
     model: typeof p.model === 'string' && p.model ? p.model : undefined,
     wireApi: p.wireApi === 'chat' ? 'chat' : p.wireApi === 'responses' ? 'responses' : undefined,
     notes: typeof p.notes === 'string' && p.notes ? p.notes : undefined,

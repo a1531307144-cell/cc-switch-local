@@ -1,6 +1,7 @@
 import http from 'node:http'
 import { Readable } from 'node:stream'
 import { loadStore } from './store'
+import { anthropicToOpenAI, estimateAnthropicTokens, openAIErrorToAnthropic, openAIToAnthropicResponse, pumpOpenAIToAnthropic } from './convert'
 import type { Provider, RouterStatus, ToolId } from '../shared/types'
 
 /**
@@ -12,7 +13,8 @@ import type { Provider, RouterStatus, ToolId } from '../shared/types'
  * 协议转换（Claude↔OpenAI）不在本版本范围，留待 v0.7。
  */
 
-const DEFAULT_PORT = 15721
+/** 默认端口避开原版 cc-switch 的代理端口（它也监听 127.0.0.1，两应用并存时不冲突；2026-10-31 实测） */
+const DEFAULT_PORT = 15731
 const MAX_ATTEMPTS = 4
 const MAX_BODY = 64 * 1024 * 1024
 const UPSTREAM_TIMEOUT_MS = 600_000
@@ -180,6 +182,92 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   const attempts: string[] = []
   for (let i = 0; i < chain.length; i++) {
     const provider = chain[i]
+    // ── OpenAI 协议供应商：走协议转换路径（v0.8.3） ──
+    const openaiMode = tool === 'claude' && provider.protocol === 'openai'
+    if (openaiMode) {
+      const pathOnly = rest.split('?')[0]
+      if (pathOnly === '/v1/messages/count_tokens') {
+        // 本地粗估，不打上游
+        let ab: Record<string, unknown> = {}
+        try {
+          ab = JSON.parse(body.toString('utf8')) as Record<string, unknown>
+        } catch {
+          /* 空体按 0 */
+        }
+        stats[tool].requests++
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ input_tokens: estimateAnthropicTokens(ab) }))
+        return
+      }
+      if (pathOnly !== '/v1/messages') {
+        jsonError(res, 404, `OpenAI 协议供应商只支持 /v1/messages 与 /v1/messages/count_tokens（收到 ${pathOnly}）`)
+        return
+      }
+      let anthropicBody: Record<string, unknown>
+      try {
+        anthropicBody = JSON.parse(body.toString('utf8')) as Record<string, unknown>
+      } catch {
+        stats[tool].errors++
+        jsonError(res, 400, '请求体不是合法 JSON')
+        return
+      }
+      const oaBody = anthropicToOpenAI(anthropicBody, provider)
+      const upstream = provider.baseUrl.replace(/\/+$/, '') + '/chat/completions'
+      try {
+        const ac = new AbortController()
+        const timer = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS)
+        let r: Response
+        try {
+          r = await fetch(upstream, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${provider.apiKey}` },
+            body: JSON.stringify(oaBody),
+            signal: ac.signal
+          })
+        } finally {
+          clearTimeout(timer)
+        }
+        // 5xx/429 → 换下一家（响应体丢弃）
+        if ((r.status >= 500 || r.status === 429) && i < chain.length - 1) {
+          attempts.push(`${provider.name}: HTTP ${r.status}`)
+          await r.arrayBuffer().catch(() => {})
+          continue
+        }
+        stats[tool].requests++
+        if (!r.ok) {
+          const errText = await r.text().catch(() => '')
+          res.writeHead(r.status, {
+            'content-type': 'application/json',
+            'x-ccsl-provider': encodeURIComponent(provider.name)
+          })
+          res.end(JSON.stringify(openAIErrorToAnthropic(r.status, errText)))
+          return
+        }
+        if (oaBody.stream && r.body) {
+          await pumpOpenAIToAnthropic(
+            r.body as unknown as import('node:stream/web').ReadableStream<Uint8Array>,
+            res,
+            provider.model || 'gpt-4o-mini'
+          )
+          return
+        }
+        const j = (await r.json().catch(() => null)) as Record<string, unknown> | null
+        if (!j) {
+          jsonError(res, 502, '上游响应不是合法 JSON')
+          return
+        }
+        res.writeHead(200, {
+          'content-type': 'application/json',
+          'x-ccsl-provider': encodeURIComponent(provider.name)
+        })
+        res.end(JSON.stringify(openAIToAnthropicResponse(j, typeof anthropicBody.model === 'string' ? anthropicBody.model : '')))
+        return
+      } catch (e) {
+        attempts.push(`${provider.name}: ${(e as Error).message}`)
+        continue
+      }
+    }
+    // ── Anthropic 协议供应商：原样透传 ──
     const upstream = provider.baseUrl.replace(/\/+$/, '') + rest
     try {
       const ac = new AbortController()

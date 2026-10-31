@@ -38,6 +38,39 @@ const CURATED_PRESETS: Preset[] = [
     model: 'qwen3-coder-plus',
     notes: 'Claude Code 专用代理端点，见阿里云官方文档'
   },
+  // OpenAI 兼容端点（协议 = openai，经本机路由转换后供 Claude Code 使用）
+  {
+    tool: 'claude',
+    name: 'DeepSeek（OpenAI 兼容）',
+    baseUrl: 'https://api.deepseek.com/v1',
+    model: 'deepseek-chat',
+    protocol: 'openai',
+    notes: '经本机路由协议转换后供 Claude Code 使用'
+  },
+  {
+    tool: 'claude',
+    name: 'Moonshot Kimi（OpenAI 兼容）',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    model: 'kimi-k2-turbo-preview',
+    protocol: 'openai',
+    notes: '经本机路由协议转换后供 Claude Code 使用'
+  },
+  {
+    tool: 'claude',
+    name: '智谱 GLM（OpenAI 兼容）',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-4.6',
+    protocol: 'openai',
+    notes: '经本机路由协议转换后供 Claude Code 使用'
+  },
+  {
+    tool: 'claude',
+    name: '阿里云百炼 Qwen（OpenAI 兼容）',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen3-coder-plus',
+    protocol: 'openai',
+    notes: '经本机路由协议转换后供 Claude Code 使用'
+  },
   {
     tool: 'codex',
     name: 'OpenAI 官方',

@@ -2,10 +2,8 @@ import { BrowserWindow, Menu, Notification, Tray, app, nativeImage } from 'elect
 import path from 'node:path'
 import fs from 'node:fs'
 import { loadStore, saveStore } from './store'
-import { routerEnabled } from './router'
+import { switchProviderForTool } from './switcher'
 import { t, type Lang } from '../shared/i18n'
-import * as claude from './claude'
-import * as codex from './codex'
 import type { MenuItemConstructorOptions } from 'electron'
 import type { ToolId } from '../shared/types'
 
@@ -42,8 +40,8 @@ async function switchProvider(tool: ToolId, id: string | null): Promise<void> {
       provider = store.providers.find((p) => p.id === id && p.tool === tool) ?? null
       if (!provider) return
     }
-    if (tool === 'claude') await claude.switchClaude(provider, routerEnabled(tool))
-    else await codex.switchCodex(provider, routerEnabled(tool))
+    // 统一出口：OpenAI 协议供应商自动经路由（协议转换），与 IPC 完全同路径
+    await switchProviderForTool(tool, provider)
     store.current[tool] = id
     await saveStore(store)
     refreshTray()

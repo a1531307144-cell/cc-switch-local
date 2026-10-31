@@ -14,15 +14,15 @@
 - 用户的核心诉求是**安全性**：API Key 全部存本机、代码开源可审计、零遥测零上传。任何"把数据传出去"的功能都与项目定位冲突，不要加。
 - 对标 farion1231/cc-switch（v4.0.21 起为功能参照物）。2026-10-30 用户拍板「功能实现完全相似」为目标分多版走：v0.6.0 交付预设库 / 关键字段写入 / 用量统计 / 本机路由最简版 / 托盘 / 加密备份；**协议转换与聚合模式、MCP、多工具支持、云同步（决定不做，用加密备份文件替代）见 §9**。
 
-## 2. 当前状态（2026-10-31：v0.8.2 设计一致性版）
+## 2. 当前状态（2026-10-31：v0.8.3 协议转换版）
 
 | 项 | 状态 |
 | --- | --- |
 | TypeScript 类型检查 | ✅ 通过 |
-| 端到端自测（26 步断言） | ✅ 26/26 通过（隔离目录 + 本地 mock 上游，未触碰真实配置） |
-| CDP 实机验证 | ✅ v0.8.2 复验 7/7：自绘下拉（主题/语言）展开与即时生效、侧栏动画要素（overflow hidden/nowrap/过渡）、复制链接 toast、折叠收尾态 |
+| 端到端自测（31 步断言） | ✅ 31/31 通过（隔离目录 + 本地 mock 上游，未触碰真实配置） |
+| CDP 实机验证 | ✅ v0.8.3 复验 5/5：协议下拉/模型必填校验/4 条 OpenAI 兼容预设/启用即写路由配置（15731）/卡面无协议字段 |
 | Windows 打包 | ✅ win-unpacked 实机验证通过，NSIS 由 CI 产出 |
-| 修复与打磨（v0.8.2） | ✅ 关窗驻留后双击快捷方式可唤起主窗口（second-instance 补 win.show()）；原生 select 全部换自绘 Dropdown（设置页主题/语言 + 表单 Key 类型/wire_api）；侧栏折叠动画去卡顿（nowrap+overflow hidden+统一缓动）；复制导入链接走主进程剪贴板 IPC + toast（原 navigator.clipboard 被权限加固拒绝、原生 alert 已去） |
+| 新功能（v0.8.3） | ✅ **路由协议转换**：Claude 供应商可选 OpenAI 兼容协议，路由自动完成 Anthropic↔OpenAI 双向转换（请求映射/system/tools/tool_result、JSON+SSE 流式、tool_calls↔tool_use、count_tokens 本地估算）；启用时自动开路由（switcher.ts 统一出口）；4 条 OpenAI 兼容预设（DeepSeek/GLM/Qwen/Kimi）；连接测试按协议分流；**路由默认端口改 15731**（15721 与原版 cc-switch 代理冲突，用户机器实测） |
 | GitHub 仓库 | ✅ `a1531307144-cell/cc-switch-local`（公开） |
 
 **对标 cc-switch 仍未做的**（见 §9 路线图）：路由协议转换、聚合模式、会话阅读器、MCP/Skills/提示词、多工具、主密码加密。
@@ -39,7 +39,9 @@ src/
     store.ts             # providers.json 存取（原子写、串行化写队列）
     claude.ts            # Claude 切换/备份/恢复/状态（homeDir 支持 CCS_HOME_OVERRIDE；switchClaude 第二参 viaRouter）
     codex.ts             # Codex 切换（行级手术式编辑 config.toml，保留注释/顺序；switchCodex 第二参 viaRouter）
-    router.ts            # 本机路由最简版：127.0.0.1 代理 + 故障转移（/claude/*、/codex/*，占位 Key，真实 Key 注入在代理内）
+    router.ts            # 本机路由：127.0.0.1 代理 + 故障转移 + 协议转换分发（/claude/*、/codex/*；Anthropic 透传、OpenAI 兼容走 convert）
+    convert.ts           # 协议转换核心（v0.8.3）：Anthropic↔OpenAI 请求/响应/SSE 流式/count_tokens 估算
+    switcher.ts          # 统一切换出口（v0.8.3）：IPC 与托盘共用；OpenAI 协议的 Claude 供应商自动开路由
     usage.ts             # 用量统计：扫描会话日志（Claude projects / Codex sessions），增量缓存按 mtime+size，成本按单价表估算
     backup.ts            # 加密备份：AES-256-GCM（scrypt 派生），导出/导入 .ccslbak，Key 不出机
     tray.ts              # 系统托盘：快切菜单 + 关窗驻留（close→hide，before-quit 才真退）
@@ -53,7 +55,7 @@ src/
     presets.ts           # 预设合并层：精选中文官方条目 + presets-data.ts（256 条生成数据，去重）
     presets-data.ts      # scripts/extract-presets.mjs 从 cc-switch（MIT）自动生成，勿手改
     updater.ts           # electron-updater（打包后启用，失败静默）
-    selftest.ts          # 端到端自测脚本（26 步）
+    selftest.ts          # 端到端自测脚本（31 步）
   preload/index.ts       # contextBridge 暴露 window.api（类型 = shared.Api）
   renderer/              # React UI：App + ProviderCard（v0.8.0 图标优先网格卡片，可拖拽）/ ProviderForm / SettingsPanel / UsageDashboard / Icons（内联 SVG）/ ui（VendorChip/VendorLogo/Modal）
 ```
@@ -70,9 +72,9 @@ src/
 - Codex：`model_provider = "ccsl"` + `[model_providers.ccsl]`（`requires_openai_auth = true`，Key 进 auth.json）。**v0.6.0 起是行级手术式编辑**：只替换/追加我们拥有的键（顶层 `model_provider`/`model` 与 ccsl 段），注释、键顺序、`[profile.*]` 等原样保留；写盘前用完整 TOML 解析校验，解析失败即中止（绝不写坏用户文件）。
 
 **本机路由（v0.6.0 最简版语义）**：
-- 每工具独立开关（`settings.router.claude/codex`）。开启后配置文件里只落**占位 Key**（`ccsl-local-router`）和 `http://127.0.0.1:15721/{claude|codex}`；真实 Key 只在 store 与代理内存里。
+- 每工具独立开关（`settings.router.claude/codex`）。开启后配置文件里只落**占位 Key**（`ccsl-local-router`）和 `http://127.0.0.1:15731/{claude|codex}`；真实 Key 只在 store 与代理内存里。
 - 代理只**透传** Anthropic/OpenAI 兼容端点（不做协议转换），故障转移 = 当前供应商失败（连接错误/5xx/429）后按列表顺序试下一家（上限 4 家）。路由模式下切换供应商即时生效（代理每请求重读 store）。
-- 端口：`CCS_ROUTER_PORT` 环境变量（测试）> `settings.router.port` > 默认 15721。上次退出时若开着路由，启动时自动拉起代理。
+- 端口：`CCS_ROUTER_PORT` 环境变量（测试）> `settings.router.port` > 默认 15731（**v0.8.3 起**；旧默认 15721 与原版 cc-switch 的代理端口冲突，两应用并存时路由起不来——2026-10-31 用户机器实测）。上次退出时若开着路由，启动时自动拉起代理。
 - 自测的故障转移步骤用本地 mock 上游（500 家 + 200 家），不依赖外网。
 
 **用量统计语义**：
@@ -207,8 +209,8 @@ model_reasoning_effort = "low"
 
 目标：功能实现上与 cc-switch v4.0.21 完全相似（分多版），设计延续现有 LexBench 风格。
 
-1. **v0.9.0 首选：路由协议转换**（v0.6.0 只有透传+故障转移）——Anthropic↔OpenAI Chat Completions 互转（含 SSE 流式），让 Claude Code 用 GPT、Codex 用 Claude；参考 cc-switch `src-tauri/src/proxy/`。**工程量大，单独规划并充分测试**（v0.8.0 因用户拍板先做视觉重设计而顺延）。
-2. 聚合模式（多家供应商的模型进同一个模型选择器，按模型分发）。
+1. ~~路由协议转换~~ ✅（v0.8.3：Anthropic↔OpenAI 双向含 SSE 流式与工具调用；count_tokens 本地估算；默认端口改 15731 避开原版 cc-switch 冲突）。
+2. 聚合模式（多家供应商的模型进同一个模型选择器，按模型分发）——**下一版首选**。
 3. 会话阅读器：解析会话 JSONL 成阅读页；用量扫描已打好解析基础。
 4. MCP 管理 / Skills / 提示词（cc-switch 的统一面板 + 按工具同步）。
 5. 主密码加密存储 API Key（用户最痛安全需求，一直排着）。

@@ -11,6 +11,7 @@ import { fetchBalance, balanceSupported } from './balance'
 import { buildProviderDeeplink, findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
 import { clearAppData } from './cleardata'
 import { cloneProvider, reorderProviders, validateSettingsPatch } from './library'
+import { switchProviderForTool } from './switcher'
 import { routerPort, routerStatus, startRouter, stopRouter } from './router'
 import { detectVendor } from '../shared/vendors'
 import http from 'node:http'
@@ -105,6 +106,18 @@ export async function runSelfTest(): Promise<void> {
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
+    const pe = {
+      id: newId(),
+      tool: 'claude' as const,
+      name: '协议转换家',
+      baseUrl: 'https://openai.example.com',
+      apiKey: 'sk-conv-0000000000001',
+      keyType: 'auth_token' as const,
+      protocol: 'openai' as const,
+      model: 'gpt-test',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }
 
     await step('厂商识别：官方端点/仿冒域名/字母徽章/本地端点', async () => {
       const ds = detectVendor('https://api.deepseek.com')
@@ -153,7 +166,7 @@ export async function runSelfTest(): Promise<void> {
       assertThrows(() => validateSettingsPatch({ router: { claude: true, codex: false, port: 99999 } as never }), '越界端口应拒绝')
       assertThrows(() => validateSettingsPatch({ evil: 1 } as never), '未知键应拒绝')
       validateSettingsPatch({ sidebarCollapsed: true })
-      validateSettingsPatch({ router: { claude: true, codex: false, port: 15721 } })
+      validateSettingsPatch({ router: { claude: true, codex: false, port: 15731 } })
       validateSettingsPatch({ theme: 'dark', language: 'en' })
     })
 
@@ -606,6 +619,258 @@ export async function runSelfTest(): Promise<void> {
         stopRouter()
         up.close()
       }
+    })
+
+    await step('协议转换：Anthropic 请求→OpenAI 上游（system/tools/tool_result 映射 + 响应回转）', async () => {
+      const received: { url: string; auth: string | null; body: Record<string, unknown> }[] = []
+      const up = http.createServer((req, res) => {
+        let b = ''
+        req.on('data', (c: Buffer) => (b += c))
+        req.on('end', () => {
+          received.push({ url: req.url ?? '', auth: (req.headers.authorization as string) ?? null, body: JSON.parse(b) as Record<string, unknown> })
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(
+            JSON.stringify({
+              id: 'chatcmpl-1',
+              model: 'gpt-test',
+              choices: [{ index: 0, message: { role: 'assistant', content: '你好，来自 OpenAI 端点' }, finish_reason: 'stop' }],
+              usage: { prompt_tokens: 12, completion_tokens: 7 }
+            })
+          )
+        })
+      })
+      await new Promise<void>((r) => up.listen(0, '127.0.0.1', () => r()))
+      const upAddr = up.address() as { port: number }
+      const s = loadStore()
+      if (!s.providers.some((p) => p.id === pe.id)) s.providers.push(pe)
+      const mine = s.providers.find((p) => p.id === pe.id)
+      assert(!!mine, 'pe 应存在')
+      mine!.baseUrl = `http://127.0.0.1:${upAddr.port}`
+      s.current.claude = pe.id
+      await saveStore(s)
+      await startRouter()
+      try {
+        const r = await fetch(`http://127.0.0.1:${routerPort()}/claude/v1/messages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-5',
+            max_tokens: 100,
+            stream: false,
+            system: '你是助手',
+            tools: [{ name: 'get_weather', description: '查天气', input_schema: { type: 'object', properties: { city: { type: 'string' } } } }],
+            messages: [
+              { role: 'user', content: '北京天气如何？' },
+              { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_1', name: 'get_weather', input: { city: '北京' } }] },
+              { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: '晴 25 度' }, { type: 'text', text: '谢谢' }] }
+            ]
+          })
+        })
+        assert(r.status === 200, `应 200，实际 ${r.status}，响应：${r.status === 200 ? '' : await r.text()}`)
+        assert(received.length === 1, `上游应收到 1 个请求，实际 ${received.length}`)
+        assert(received[0].url === '/chat/completions', `上游路径应为 /chat/completions，实际 ${received[0].url}`)
+        assert(received[0].auth === 'Bearer sk-conv-0000000000001', '真实 Key 应注入上游')
+        const oa = received[0].body
+        assert(oa.model === 'gpt-test', '模型应映射为供应商 model（客户端的 claude-* 名不上传）')
+        assert(oa.stream === false && oa.max_tokens === 100, 'stream/max_tokens 应映射')
+        const msgs = oa.messages as { role: string; content: unknown; tool_calls?: unknown[]; tool_call_id?: string }[]
+        assert(msgs[0].role === 'system' && msgs[0].content === '你是助手', 'system 应映射为 system 消息')
+        assert(msgs[1].role === 'user' && msgs[1].content === '北京天气如何？', '纯文本 user 应为 string')
+        const asst = msgs[2] as { role: string; tool_calls?: { function: { name: string; arguments: string } }[] }
+        assert(asst.role === 'assistant' && asst.tool_calls?.[0]?.function.name === 'get_weather', 'tool_use 应映射为 tool_calls')
+        assert(JSON.parse(asst.tool_calls![0].function.arguments).city === '北京', 'tool input 应序列化进 arguments')
+        assert(msgs[3].role === 'tool' && msgs[3].tool_call_id === 'toolu_1' && msgs[3].content === '晴 25 度', 'tool_result 应映射为 role:tool')
+        assert(msgs[4].role === 'user' && msgs[4].content === '谢谢', '剩余文本应为 user 消息')
+        const tools = oa.tools as { function: { name: string; parameters: unknown } }[]
+        assert(Array.isArray(tools) && tools[0].function.name === 'get_weather' && !!tools[0].function.parameters, 'tools 应映射为 function 格式')
+        const j = (await r.json()) as { type: string; content: { type: string; text?: string }[]; usage: { input_tokens: number; output_tokens: number }; stop_reason: string }
+        assert(j.type === 'message' && j.content[0]?.type === 'text' && j.content[0].text === '你好，来自 OpenAI 端点', '响应应回转为 Anthropic message')
+        assert(j.usage.input_tokens === 12 && j.usage.output_tokens === 7, 'usage 应映射')
+        assert(j.stop_reason === 'end_turn', 'finish_reason stop 应映射为 end_turn')
+      } finally {
+        stopRouter()
+        up.close()
+      }
+    })
+
+    await step('协议转换：OpenAI tool_calls → Anthropic tool_use（非流式）', async () => {
+      const up = http.createServer((_req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            id: 'chatcmpl-2',
+            model: 'gpt-test',
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"上海"}' } }] },
+                finish_reason: 'tool_calls'
+              }
+            ],
+            usage: { prompt_tokens: 8, completion_tokens: 5 }
+          })
+        )
+      })
+      await new Promise<void>((r) => up.listen(0, '127.0.0.1', () => r()))
+      const upAddr = up.address() as { port: number }
+      const s = loadStore()
+      ;(s.providers.find((p) => p.id === pe.id) as { baseUrl: string }).baseUrl = `http://127.0.0.1:${upAddr.port}`
+      s.current.claude = pe.id
+      await saveStore(s)
+      await startRouter()
+      try {
+        const r = await fetch(`http://127.0.0.1:${routerPort()}/claude/v1/messages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 50, messages: [{ role: 'user', content: '上海天气' }] })
+        })
+        assert(r.status === 200, `应 200，实际 ${r.status}`)
+        const j = (await r.json()) as { content: { type: string; id?: string; name?: string; input?: unknown }[]; stop_reason: string }
+        const tu = j.content.find((c) => c.type === 'tool_use')
+        assert(!!tu, '应有 tool_use 块')
+        assert(tu!.id === 'call_1' && tu!.name === 'get_weather', `tool_use id/name 应保留：${JSON.stringify(tu)}`)
+        assert((tu!.input as { city: string }).city === '上海', 'arguments 应回解析为 input 对象')
+        assert(j.stop_reason === 'tool_use', 'finish_reason tool_calls 应映射为 tool_use')
+      } finally {
+        stopRouter()
+        up.close()
+      }
+    })
+
+    await step('协议转换：SSE 流式（text/tool_calls → Anthropic 事件序列）', async () => {
+      const up = http.createServer((req, res) => {
+        let b = ''
+        req.on('data', (c: Buffer) => (b += c))
+        req.on('end', () => {
+          const wantStream = (JSON.parse(b) as { stream?: boolean }).stream === true
+          if (!wantStream) {
+            res.writeHead(400)
+            res.end('expect stream')
+            return
+          }
+          res.writeHead(200, { 'content-type': 'text/event-stream' })
+          const chunks = [
+            'data: {"id":"c1","model":"gpt-test","choices":[{"index":0,"delta":{"role":"assistant","content":"你好"}}]}\n\n',
+            'data: {"id":"c1","choices":[{"index":0,"delta":{"content":"，世界"}}]}\n\n',
+            'data: {"id":"c1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_9","function":{"name":"get_weather","arguments":""}}]}}]}\n\n',
+            'data: {"id":"c1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"city\\":"}}]}}]}\n\n',
+            'data: {"id":"c1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"杭州\\"}"}}]},"finish_reason":"tool_calls"}]}\n\n',
+            'data: {"id":"c1","choices":[],"usage":{"prompt_tokens":9,"completion_tokens":6}}\n\n',
+            'data: [DONE]\n\n'
+          ]
+          for (const c of chunks) res.write(c)
+          res.end()
+        })
+      })
+      await new Promise<void>((r) => up.listen(0, '127.0.0.1', () => r()))
+      const upAddr = up.address() as { port: number }
+      const s = loadStore()
+      ;(s.providers.find((p) => p.id === pe.id) as { baseUrl: string }).baseUrl = `http://127.0.0.1:${upAddr.port}`
+      s.current.claude = pe.id
+      await saveStore(s)
+      await startRouter()
+      try {
+        const r = await fetch(`http://127.0.0.1:${routerPort()}/claude/v1/messages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 50, stream: true, messages: [{ role: 'user', content: '杭州天气' }] })
+        })
+        assert(r.status === 200, `应 200，实际 ${r.status}`)
+        const ct = r.headers.get('content-type') ?? ''
+        assert(ct.includes('text/event-stream'), `应回 SSE，实际 ${ct}`)
+        const text = await r.text()
+        let events: { ev: string; data: Record<string, unknown> }[] = []
+        try {
+          events = text
+            .split('\n\n')
+            .filter((blk) => blk.startsWith('event:'))
+            .map((blk) => {
+              const ev = blk.match(/event: (.+)/)?.[1] ?? ''
+              const data = blk.match(/data: (.+)/)?.[1] ?? ''
+              return { ev, data: JSON.parse(data) as Record<string, unknown> }
+            })
+        } catch (e) {
+          throw new Error(`SSE 解析失败：${(e as Error).message}；原始响应前 600 字符：${text.slice(0, 600)}`)
+        }
+        assert(events[0].ev === 'message_start', `首事件应为 message_start，实际 ${events[0].ev}`)
+        const types = events.map((e) => e.ev)
+        assert(types.includes('content_block_delta'), '应有 content_block_delta')
+        const textDelta = events
+          .filter((e) => e.ev === 'content_block_delta' && (e.data.delta as { type?: string }).type === 'text_delta')
+          .map((e) => (e.data.delta as { text?: string }).text)
+          .join('')
+        assert(textDelta === '你好，世界', `文本增量应拼接为「你好，世界」，实际「${textDelta}」`)
+        const toolStart = events.find((e) => e.ev === 'content_block_start' && (e.data.content_block as { type?: string }).type === 'tool_use')
+        assert(!!toolStart, '应有 tool_use 的 content_block_start')
+        const tb = toolStart!.data.content_block as { id?: string; name?: string }
+        assert(tb.id === 'call_9' && tb.name === 'get_weather', `tool_use 头应带 id/name：${JSON.stringify(tb)}`)
+        const argsJson = events
+          .filter((e) => e.ev === 'content_block_delta' && (e.data.delta as { type?: string }).type === 'input_json_delta')
+          .map((e) => (e.data.delta as { partial_json?: string }).partial_json ?? '')
+          .join('')
+        let argsParsed: { city?: string }
+        try {
+          argsParsed = JSON.parse(argsJson) as { city?: string }
+        } catch {
+          throw new Error(`arguments 分片拼接非法：「${argsJson}」；事件序列：${types.join(',')}；原始响应前 800 字符：${text.slice(0, 800)}`)
+        }
+        assert(argsParsed.city === '杭州', `arguments 应含 city=杭州，实际：${JSON.stringify(argsParsed)}`)
+        assert(types[types.length - 1] === 'message_stop', '末事件应为 message_stop')
+        const mDelta = events.find((e) => e.ev === 'message_delta')
+        assert((mDelta!.data.delta as { stop_reason?: string }).stop_reason === 'tool_use', '流式 stop_reason 应为 tool_use')
+        // 块序正确：text 先开先收，tool_use 后开；text 的收口在 tool_use 开启之前
+        const starts = events.map((e) => e).filter((x) => x.ev === 'content_block_start')
+        assert(starts.length === 2, '应有 2 个块（text + tool_use）')
+        assert((starts[0].data.content_block as { type: string }).type === 'text', '第 1 块是 text')
+        assert((starts[1].data.content_block as { type: string }).type === 'tool_use', '第 2 块是 tool_use')
+        const idxFirstStop = types.indexOf('content_block_stop')
+        const idxSecondStart = types.indexOf('content_block_start', types.indexOf('content_block_start') + 1)
+        assert(idxFirstStop > -1 && idxSecondStart > -1 && idxFirstStop < idxSecondStart, 'text 块应在 tool_use 开始前收口')
+      } finally {
+        stopRouter()
+        up.close()
+      }
+    })
+
+    await step('协议转换：count_tokens 本地估算（不打上游）', async () => {
+      const s = loadStore()
+      ;(s.providers.find((p) => p.id === pe.id) as { baseUrl: string }).baseUrl = 'http://127.0.0.1:1'
+      await saveStore(s)
+      await startRouter()
+      try {
+        const r = await fetch(`http://127.0.0.1:${routerPort()}/claude/v1/messages/count_tokens`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ model: 'claude-sonnet-4-5', messages: [{ role: 'user', content: 'hello world '.repeat(100) }] })
+        })
+        assert(r.status === 200, `应 200，实际 ${r.status}`)
+        const j = (await r.json()) as { input_tokens: number }
+        assert(j.input_tokens > 100, `token 估算应 >100，实际 ${JSON.stringify(j)}`)
+      } finally {
+        stopRouter()
+      }
+    })
+
+    await step('切换 OpenAI 协议供应商自动开路由（统一出口），切回直连恢复', async () => {
+      stopRouter()
+      const s = loadStore()
+      if (!s.providers.some((p) => p.id === pe.id)) s.providers.push(pe)
+      s.current.claude = null
+      await saveStore(s)
+      const r = await switchProviderForTool('claude', pe)
+      assert(r.ok, '切换应成功')
+      const data = await readJson(claudeSettings)
+      const env = data.env as Record<string, unknown>
+      assert(env.ANTHROPIC_BASE_URL === `http://127.0.0.1:${routerPort()}/claude`, 'OpenAI 协议供应商应写入本机路由地址')
+      assert(env.ANTHROPIC_AUTH_TOKEN === 'ccsl-local-router', '应写占位 Key')
+      assert(routerStatus().running, '应自动拉起路由进程')
+      // 切回 Anthropic 家：直连配置
+      const r2 = await switchProviderForTool('claude', pa)
+      assert(r2.ok, '切回应成功')
+      const data2 = await readJson(claudeSettings)
+      const env2 = data2.env as Record<string, unknown>
+      assert(env2.ANTHROPIC_BASE_URL === pa.baseUrl && env2.ANTHROPIC_AUTH_TOKEN === pa.apiKey, '切回 Anthropic 家应为直连配置')
+      stopRouter()
     })
 
     await step('余额查询：mock 上游解析 + 401 报错 + 不支持的厂商拒绝', async () => {

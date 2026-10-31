@@ -11,13 +11,24 @@ export interface FormDraft {
   baseUrl: string
   apiKey: string
   keyType: KeyType
+  protocol: 'anthropic' | 'openai'
   model: string
   wireApi: 'responses' | 'chat'
   notes: string
 }
 
 export function emptyDraft(tool: ToolId): FormDraft {
-  return { tool, name: '', baseUrl: '', apiKey: '', keyType: 'auth_token', model: '', wireApi: 'responses', notes: '' }
+  return {
+    tool,
+    name: '',
+    baseUrl: '',
+    apiKey: '',
+    keyType: 'auth_token',
+    protocol: 'anthropic',
+    model: '',
+    wireApi: 'responses',
+    notes: ''
+  }
 }
 
 function safeHost(url: string): string {
@@ -62,6 +73,7 @@ export default function ProviderForm({
       baseUrl: p.baseUrl,
       model: p.model ?? '',
       keyType: p.keyType ?? form.keyType,
+      protocol: p.protocol ?? (p.tool === 'claude' ? 'anthropic' : form.protocol),
       wireApi: p.wireApi ?? form.wireApi,
       notes: p.notes ?? form.notes
     })
@@ -76,6 +88,7 @@ export default function ProviderForm({
     if (!form.name.trim()) return setErr(t(lang, 'form.err.name'))
     if (!/^https?:\/\//.test(form.baseUrl.trim())) return setErr(t(lang, 'form.err.url'))
     if (!form.apiKey.trim()) return setErr(t(lang, 'form.err.key'))
+    if (form.tool === 'claude' && form.protocol === 'openai' && !form.model.trim()) return setErr(t(lang, 'form.err.model'))
     setErr('')
     setSaving(true)
     try {
@@ -166,17 +179,35 @@ export default function ProviderForm({
         </label>
 
         {form.tool === 'claude' ? (
-          <label>
-            {t(lang, 'form.keyType')}
-            <Dropdown
-              value={form.keyType}
-              options={[
-                { value: 'auth_token', label: t(lang, 'form.keyType.auth') },
-                { value: 'api_key', label: t(lang, 'form.keyType.api') }
-              ]}
-              onChange={(v) => set({ keyType: v as KeyType })}
-            />
-          </label>
+          <>
+            <label>
+              {t(lang, 'form.keyType')}
+              <Dropdown
+                value={form.keyType}
+                options={[
+                  { value: 'auth_token', label: t(lang, 'form.keyType.auth') },
+                  { value: 'api_key', label: t(lang, 'form.keyType.api') }
+                ]}
+                onChange={(v) => set({ keyType: v as KeyType })}
+              />
+            </label>
+            <label>
+              {t(lang, 'form.protocol')}
+              <Dropdown
+                value={form.protocol}
+                options={[
+                  { value: 'anthropic', label: t(lang, 'form.protocol.anthropic') },
+                  { value: 'openai', label: t(lang, 'form.protocol.openai') }
+                ]}
+                onChange={(v) => set({ protocol: v as 'anthropic' | 'openai' })}
+              />
+              <small>{t(lang, 'form.protocolHint')}</small>
+            </label>
+            <label>
+              {t(lang, 'form.modelClaude')}
+              <input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="claude-sonnet-4-5" />
+            </label>
+          </>
         ) : (
           <>
             <label>
@@ -195,13 +226,6 @@ export default function ProviderForm({
               />
             </label>
           </>
-        )}
-
-        {form.tool === 'claude' && (
-          <label>
-            {t(lang, 'form.modelClaude')}
-            <input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="claude-sonnet-4-5" />
-          </label>
         )}
 
         <label>
