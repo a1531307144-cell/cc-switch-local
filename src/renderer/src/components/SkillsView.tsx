@@ -120,7 +120,7 @@ export default function SkillsView({ lang, notify }: { lang: Lang; notify: (text
       <section className="card skill-install">
         <div className="btn-row">
           <input
-            className="group-name-input"
+            className="bar-input"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder={t(lang, 'skill.urlPh')}

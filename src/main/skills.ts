@@ -44,11 +44,11 @@ function tarExe(): string {
   return 'tar'
 }
 
-async function runTar(args: string): Promise<void> {
+async function runTar(args: string[]): Promise<void> {
   const tar = tarExe()
   await new Promise<void>((resolve, reject) => {
-    const cmd = /^[\w:\\.-]+$/.test(tar) && tar.includes(' ') === false ? `${tar} ${args}` : `"${tar}" ${args}`
-    const child = spawn(cmd, { shell: true, windowsHide: true, cwd: os.tmpdir() })
+    // 数组式 spawn（无 shell）：路径原样传递，杜绝 zip 文件名中的引号/特殊字符构造命令（v0.8.11 加固）
+    const child = spawn(tar, args, { windowsHide: true, cwd: os.tmpdir() })
     let stderr = ''
     child.stderr?.on('data', (d: Buffer) => (stderr += d.toString()))
     const timer = setTimeout(() => {
@@ -248,7 +248,7 @@ async function installZip(tool: ToolId, zipPath: string, source?: SkillInfo['sou
   await fsp.mkdir(root, { recursive: true })
   const temp = await fsp.mkdtemp(path.join(os.tmpdir(), 'ccsl-skill-'))
   try {
-    await runTar(`-xf "${zipPath}" -C "${temp}"`)
+    await runTar(['-xf', zipPath, '-C', temp])
     const candidates = await findSkillDirs(temp)
     if (candidates.length === 0) {
       throw new Error('压缩包里没有找到 SKILL.md（skill 需为含 SKILL.md 的目录）')

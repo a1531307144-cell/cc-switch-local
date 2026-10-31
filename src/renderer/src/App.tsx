@@ -529,6 +529,7 @@ export default function App() {
             <IconLayers />
             {!collapsed && <span>{tr('side.groups')}</span>}
           </button>
+          <div className="nav-divider" />
           <button
             type="button"
             className={`nav icon${view === 'usage' ? ' active' : ''}`}

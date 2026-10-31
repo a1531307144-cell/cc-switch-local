@@ -76,6 +76,8 @@ export async function resolveNpmCmd(): Promise<string | null> {
     candidates.push('npm')
   }
   for (const c of candidates) {
+    // 候选路径来自环境变量：含引号/换行的异常值直接跳过（v0.8.11 加固）
+    if (c.includes('"') || c.includes('$') || c.includes('\n') || c.includes('\r')) continue
     const r = await runCmd(/^[\w-]+$/.test(c) ? `${c} --version` : `"${c}" --version`, 10_000)
     if (r.code === 0 && /^\d/.test(r.stdout.trim())) {
       npmCmdCache = { cmd: c, probed: true }

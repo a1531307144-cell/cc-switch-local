@@ -946,6 +946,29 @@ code {
   width: 100%;
 }
 
+/* 独立的条状输入（v0.8.11 视觉统一）：与 .search 同一几何语言，供无表单容器的内容条使用 */
+.bar-input {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-full);
+  padding: 7px 14px;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  min-width: 0;
+}
+
+.bar-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.bar-input::placeholder {
+  color: var(--muted);
+}
+
 .prompt-content {
   width: 100%;
   min-height: 320px;
@@ -972,7 +995,7 @@ code {
 }
 
 /* 方案组（v0.8.9） */
-.group-save .group-name-input {
+.group-save .bar-input {
   flex: 1;
   min-width: 0;
 }
@@ -990,7 +1013,7 @@ code {
 }
 
 /* Skills（v0.8.10）：安装区 + 列表复用 sessions 布局 */
-.skill-install .group-name-input {
+.skill-install .bar-input {
   flex: 1;
   min-width: 0;
 }
@@ -1203,7 +1226,8 @@ code {
 
 .form input,
 .form select,
-.form textarea {
+.form textarea,
+.prompt-name-input {
   border: 1px solid var(--border-strong);
   border-radius: var(--r-s);
   padding: 8px 12px;
@@ -1216,7 +1240,8 @@ code {
 
 .form input:focus,
 .form select:focus,
-.form textarea:focus {
+.form textarea:focus,
+.prompt-name-input:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -1557,6 +1582,7 @@ code {
 }
 
 .stat-label {
+  word-break: keep-all;
   margin-top: 2px;
   color: var(--muted);
   font-size: 12px;

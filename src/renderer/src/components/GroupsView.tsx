@@ -97,7 +97,7 @@ export default function GroupsView({ lang, notify, onChanged }: { lang: Lang; no
 
       <section className="card group-save">
         <div className="btn-row">
-          <input className="group-name-input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t(lang, 'group.newNamePh')} />
+          <input className="bar-input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t(lang, 'group.newNamePh')} />
           <button className="btn primary sm" onClick={() => void saveCurrent()} disabled={busy}>
             {t(lang, 'group.saveCurrent')}
           </button>
