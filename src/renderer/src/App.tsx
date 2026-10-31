@@ -17,7 +17,7 @@ import UsageDashboard from './components/UsageDashboard'
 import { IconBook, IconChart, IconChevronLeft, IconChevronRight, IconCube, IconGear, IconGrid, IconLayers, IconLock, IconNote, IconPlug, IconRows, IconSearch } from './components/Icons'
 import logoUrl from './assets/logo.png'
 
-type View = ToolId | 'usage' | 'settings' | 'sessions' | 'mcp' | 'prompts' | 'groups' | 'skills' | 'add'
+type View = ToolId | 'usage' | 'settings' | 'sessions' | 'mcp' | 'prompts' | 'groups' | 'skills' | 'add' | 'form'
 
 /** 主密码解锁屏（锁定态下渲染层只显示这个） */
 function UnlockScreen({ lang, onUnlocked }: { lang: Lang; onUnlocked: () => void }) {
@@ -93,12 +93,20 @@ export default function App() {
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const [allPresets, setAllPresets] = useState<Preset[]>([])
+  const [formFrom, setFormFrom] = useState<'add' | 'tool'>('tool')
 
   const lang: Lang = store?.settings.language === 'en' ? 'en' : 'zh'
   const tr = useCallback((key: Parameters<typeof t>[1], vars?: Record<string, string | number>) => t(lang, key, vars), [lang])
   const collapsed = store?.settings.sidebarCollapsed === true
 
   const fmtMB = (n: number): string => `${(n / 1048576).toFixed(1)} MB`
+
+  /** 打开整页表单：from 记录来源，返回按钮据此导航（v0.8.15） */
+  const openForm = useCallback((d: FormDraft, from: 'add' | 'tool') => {
+    setDraft(d)
+    setFormFrom(from)
+    setView('form')
+  }, [])
 
   const toastTimer = useRef<number | undefined>(undefined)
   const notify = useCallback((text: string, kind: 'ok' | 'err' = 'ok') => {
@@ -131,7 +139,7 @@ export default function App() {
   const applyDeeplink = useCallback(
     (r: DeeplinkResult) => {
       if (r.ok && r.input) {
-        setDraft({
+        openForm({
           ...emptyDraft(r.input.tool),
           name: r.input.name,
           baseUrl: r.input.baseUrl,
@@ -141,7 +149,7 @@ export default function App() {
           model: r.input.model ?? '',
           wireApi: r.input.wireApi ?? (r.input.tool === 'codex' ? 'responses' : 'chat'),
           notes: t(lang, 'form.deeplinkNote')
-        })
+        }, 'tool')
         notify(t(lang, 'deeplink.okToast', { name: r.input.name }))
       } else {
         notify(t(lang, 'deeplink.errToast', { msg: r.error ?? '' }), 'err')
@@ -379,7 +387,7 @@ export default function App() {
     })
     notify(d.id ? tr('toast.saved') : tr('toast.added'))
     setDraft(null)
-    if (view === 'add') setView(activeTool)
+    setView(activeTool)
     await refresh()
   }
 
@@ -770,7 +778,7 @@ export default function App() {
                         onDragEnd={handleDragEnd}
                         onSwitch={switchTo}
                         onEdit={(x) =>
-                          setDraft({
+                          openForm({
                             ...emptyDraft(x.tool),
                             id: x.id,
                             name: x.name,
@@ -783,7 +791,7 @@ export default function App() {
                             wireApi: x.wireApi ?? (x.tool === 'codex' ? 'responses' : 'chat'),
                             notes: x.notes ?? '',
                             icon: x.icon ?? ''
-                          })
+                          }, 'tool')
                         }
                         onClone={clone}
                         onDelete={del}
@@ -796,13 +804,16 @@ export default function App() {
               )}
             </>
           )}
+          {view === 'form' && draft && (
+            <ProviderForm draft={draft} lang={lang} onBack={() => { setDraft(null); setView(formFrom === 'add' ? 'add' : activeTool) }} onSave={save} />
+          )}
           {view === 'add' && (
             <AddProviderView
               lang={lang}
               presets={allPresets}
               tool={activeTool}
               onBack={() => setView(activeTool)}
-              onPick={(d) => setDraft(d)}
+              onPick={(d) => openForm(d, 'add')}
             />
           )}
           {view === 'sessions' && <SessionsView lang={lang} notify={notify} />}
@@ -816,7 +827,6 @@ export default function App() {
           )}
         </main>
 
-        {draft && <ProviderForm draft={draft} lang={lang} onClose={() => setDraft(null)} onSave={save} />}
         {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
       </div>
     </>

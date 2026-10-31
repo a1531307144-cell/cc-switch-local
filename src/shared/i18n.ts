@@ -94,6 +94,8 @@ export const STRINGS = {
     zh: '聚合模式下用「别名/模型」直达该供应商；仅限字母/数字/下划线/中划线。英文名称会自动推导，无需填写',
     en: 'Used as the "alias/model" prefix in aggregate mode; letters/digits/underscore/dash only. English names auto-derive one'
   },
+  'form.section.basic': { zh: '基本信息', en: 'Basic info' },
+  'form.section.advanced': { zh: '高级选项', en: 'Advanced options' },
   'form.wireApi': { zh: '报文格式（wire_api）', en: 'Wire format (wire_api)' },
   'form.wireApiHint': {
     zh: 'Chat Completions 是常规 OpenAI 兼容端点；Responses API 供只暴露 /responses 的上游（如 OpenAI 官方新模型）',

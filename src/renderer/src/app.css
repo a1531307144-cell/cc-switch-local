@@ -508,6 +508,67 @@ code {
   color: #10120f;
 }
 
+/* 表单整页（v0.8.15） */
+.form-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+.form-page-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
+  width: 100%;
+  padding-bottom: 8px;
+}
+
+.form-head-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.form-head-card .vendor-logo,
+.form-head-card .vendor-tile {
+  width: 40px;
+  height: 40px;
+}
+
+.adv-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 0 10px;
+}
+
+.adv-caret {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  color: var(--muted);
+}
+
+.adv-caret.open {
+  transform: rotate(90deg);
+}
+
+.form-page-actions {
+  justify-content: flex-end;
+}
+
 /* 卡片主视觉：大号厂商图标（识别度第一位），名称退居其次 */
 .pcard-logo {
   height: 48px;
@@ -527,6 +588,9 @@ code {
   width: 44px;
   height: 44px;
   display: block;
+  /* 统一圆角（v0.8.15）：方形 PNG/截图类图标与整体设计语言对齐 */
+  border-radius: 9px;
+  object-fit: contain;
 }
 
 .vendor-tile {
@@ -1133,6 +1197,7 @@ code {
   width: 30px;
   height: 30px;
   flex-shrink: 0;
+  border-radius: 8px;
 }
 
 .preset-card .vendor-tile {

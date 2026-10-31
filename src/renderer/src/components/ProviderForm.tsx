@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
-import type { KeyType, Lang, Preset, ToolId } from '../../../shared/types'
+import { useState } from 'react'
+import type { KeyType, Lang, ToolId } from '../../../shared/types'
 import { t } from '../../../shared/i18n'
 import { detectVendor } from '../../../shared/vendors'
-import { Dropdown, Modal, VendorChip } from './ui'
+import { Dropdown, VendorLogo } from './ui'
 
 export interface FormDraft {
   id?: string
@@ -44,50 +44,35 @@ function safeHost(url: string): string {
   }
 }
 
-export default function ProviderForm({
+/**
+ * 添加/编辑供应商整页表单（v0.8.15，对标原版 cc-switch 的配置页）：
+ * 头部图标卡 + 基本信息卡片 + 高级选项折叠卡片，底部保存/返回。
+ * 预设发现由「添加供应商」整页负责，本页专注字段填写。
+ */
+export default function ProviderFormPage({
   draft,
   lang,
-  onClose,
+  onBack,
   onSave
 }: {
   draft: FormDraft
   lang: Lang
-  onClose: () => void
+  onBack: () => void
   onSave: (d: FormDraft) => Promise<void>
 }) {
   const [form, setForm] = useState<FormDraft>(draft)
-  const [presets, setPresets] = useState<Preset[]>([])
-  const [presetQuery, setPresetQuery] = useState('')
-  const [presetOpen, setPresetOpen] = useState(false)
   const [showKey, setShowKey] = useState(false)
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    window.api
-      .presetsGet()
-      .then((ps) => setPresets(ps.filter((p) => p.tool === draft.tool)))
-      .catch(() => {})
-  }, [draft.tool])
+  // 高级选项默认展开条件：编辑已有配置且高级字段非默认值
+  const [advancedOpen, setAdvancedOpen] = useState(() =>
+    form.tool === 'claude'
+      ? form.keyType !== 'auth_token' || form.protocol === 'openai' || !!form.alias || (!!form.id && !!form.model)
+      : false
+  )
 
   const set = (patch: Partial<FormDraft>) => setForm((f) => ({ ...f, ...patch }))
-
-  const applyPreset = (p: Preset) => {
-    set({
-      name: p.name,
-      baseUrl: p.baseUrl,
-      model: p.model ?? '',
-      keyType: p.keyType ?? form.keyType,
-      protocol: p.protocol ?? (p.tool === 'claude' ? 'anthropic' : form.protocol),
-      wireApi: p.wireApi ?? form.wireApi,
-      notes: p.notes ?? form.notes
-    })
-  }
-
-  const q = presetQuery.trim().toLowerCase()
-  const presetMatches = presets
-    .filter((p) => !q || (p.searchKey ?? '').includes(q))
-    .slice(0, 8)
+  const vendor = detectVendor(form.baseUrl.trim())
 
   const submit = async () => {
     if (!form.name.trim()) return setErr(t(lang, 'form.err.name'))
@@ -105,166 +90,157 @@ export default function ProviderForm({
   }
 
   return (
-    <Modal title={form.id ? t(lang, 'form.editTitle') : t(lang, 'form.newTitle')} onClose={onClose}>
-      <div className="form">
-        <label>
-          {t(lang, 'form.presetLabel', { n: presets.length })}
-          <div
-            className="preset-picker"
-            onBlur={() => {
-              window.setTimeout(() => setPresetOpen(false), 120)
-            }}
-          >
-            <input
-              value={presetQuery}
-              onChange={(e) => {
-                setPresetQuery(e.target.value)
-                setPresetOpen(true)
-              }}
-              onFocus={() => setPresetOpen(true)}
-              placeholder={t(lang, 'form.presetPh')}
-            />
-            {presetOpen && presetMatches.length > 0 && (
-              <div className="preset-list">
-                {presetMatches.map((p) => (
-                  <button
-                    type="button"
-                    key={`${p.tool}|${p.baseUrl}|${p.name}`}
-                    className="preset-item"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      applyPreset(p)
-                      setPresetOpen(false)
-                      setPresetQuery('')
-                    }}
-                  >
-                    <span>{p.name}</span>
-                    <span className="preset-domain">{safeHost(p.baseUrl)}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+    <div className="form-page">
+      <div className="add-head">
+        <button type="button" className="btn sm" onClick={onBack} aria-label={t(lang, 'add.back')}>
+          ‹
+        </button>
+        <h2>
+          {form.id ? t(lang, 'form.editTitle') : t(lang, 'form.newTitle')} <span className="muted">{form.tool === 'claude' ? 'Claude Code' : 'Codex'}</span>
+        </h2>
+      </div>
+
+      <div className="form-page-body">
+        <section className="card form-head-card">
+          <VendorLogo vendor={vendor} fallbackText={form.name || form.baseUrl} iconSlug={form.icon} />
+          <div className="preset-card-text">
+            <strong>{form.name || t(lang, 'form.newTitle')}</strong>
+            <span className="muted small">{form.baseUrl ? safeHost(form.baseUrl) : '—'}</span>
           </div>
-          <small>{t(lang, 'form.presetNote')}</small>
-        </label>
+        </section>
 
-        <label>
-          {t(lang, 'form.name')}
-          <input value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={t(lang, 'form.namePh')} />
-        </label>
-
-        <label>
-          Base URL *
-          <input
-            value={form.baseUrl}
-            onChange={(e) => set({ baseUrl: e.target.value })}
-            placeholder="https://api.example.com"
-          />
-          {detectVendor(form.baseUrl.trim()) && (
-            <span className="vendor-hint">
-              <VendorChip vendor={detectVendor(form.baseUrl.trim())!} />
-            </span>
-          )}
-        </label>
-
-        <label>
-          {t(lang, 'form.apiKey')}
-          <div className="key-row">
-            <input
-              type={showKey ? 'text' : 'password'}
-              value={form.apiKey}
-              onChange={(e) => set({ apiKey: e.target.value })}
-              placeholder="sk-…"
-            />
-            <label className="check inline">
-              <input type="checkbox" checked={showKey} onChange={(e) => setShowKey(e.target.checked)} />
-              {t(lang, 'form.show')}
+        <section className="card">
+          <h3>{t(lang, 'form.section.basic')}</h3>
+          <div className="form">
+            <label>
+              {t(lang, 'form.name')} *
+              <input value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={t(lang, 'form.namePh')} />
+            </label>
+            <label>
+              Base URL *
+              <input
+                value={form.baseUrl}
+                onChange={(e) => set({ baseUrl: e.target.value })}
+                placeholder="https://api.example.com"
+              />
+              {detectVendor(form.baseUrl.trim()) && (
+                <span className="vendor-hint">
+                  <VendorChipInline baseUrl={form.baseUrl.trim()} />
+                </span>
+              )}
+            </label>
+            <label>
+              {t(lang, 'form.apiKey')} *
+              <div className="key-row">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={form.apiKey}
+                  onChange={(e) => set({ apiKey: e.target.value })}
+                  placeholder="sk-…"
+                />
+                <label className="check inline">
+                  <input type="checkbox" checked={showKey} onChange={(e) => setShowKey(e.target.checked)} />
+                  {t(lang, 'form.show')}
+                </label>
+              </div>
+            </label>
+            <label>
+              {t(lang, 'form.notes')}
+              <textarea value={form.notes} onChange={(e) => set({ notes: e.target.value })} rows={2} />
             </label>
           </div>
-        </label>
+        </section>
 
         {form.tool === 'claude' ? (
-          <>
-            <label>
-              {t(lang, 'form.keyType')}
-              <Dropdown
-                value={form.keyType}
-                options={[
-                  { value: 'auth_token', label: t(lang, 'form.keyType.auth') },
-                  { value: 'api_key', label: t(lang, 'form.keyType.api') }
-                ]}
-                onChange={(v) => set({ keyType: v as KeyType })}
-              />
-            </label>
-            <label>
-              {t(lang, 'form.protocol')}
-              <Dropdown
-                value={form.protocol}
-                options={[
-                  { value: 'anthropic', label: t(lang, 'form.protocol.anthropic') },
-                  { value: 'openai', label: t(lang, 'form.protocol.openai') }
-                ]}
-                onChange={(v) => set({ protocol: v as 'anthropic' | 'openai' })}
-              />
-              <small>{t(lang, 'form.protocolHint')}</small>
-            </label>
-            <label>
-              {t(lang, 'form.modelClaude')}
-              <input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="claude-sonnet-4-5" />
-            </label>
-            {form.protocol === 'openai' && (
+          <section className="card">
+            <button type="button" className="adv-toggle" onClick={() => setAdvancedOpen((v) => !v)}>
+              <span className={`adv-caret${advancedOpen ? ' open' : ''}`} aria-hidden>
+                ▸
+              </span>
+              {t(lang, 'form.section.advanced')}
+            </button>
+            {advancedOpen && (
+              <div className="form">
+                <label>
+                  {t(lang, 'form.keyType')}
+                  <Dropdown
+                    value={form.keyType}
+                    options={[
+                      { value: 'auth_token', label: t(lang, 'form.keyType.auth') },
+                      { value: 'api_key', label: t(lang, 'form.keyType.api') }
+                    ]}
+                    onChange={(v) => set({ keyType: v as KeyType })}
+                  />
+                </label>
+                <label>
+                  {t(lang, 'form.protocol')}
+                  <Dropdown
+                    value={form.protocol}
+                    options={[
+                      { value: 'anthropic', label: t(lang, 'form.protocol.anthropic') },
+                      { value: 'openai', label: t(lang, 'form.protocol.openai') }
+                    ]}
+                    onChange={(v) => set({ protocol: v as 'anthropic' | 'openai' })}
+                  />
+                  <small>{t(lang, 'form.protocolHint')}</small>
+                </label>
+                <label>
+                  {t(lang, 'form.modelClaude')}
+                  <input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="claude-sonnet-4-5" />
+                </label>
+                {form.protocol === 'openai' && (
+                  <label>
+                    {t(lang, 'form.wireApi')}
+                    <Dropdown
+                      value={form.wireApi}
+                      options={[
+                        { value: 'chat', label: 'Chat Completions' },
+                        { value: 'responses', label: 'Responses API' }
+                      ]}
+                      onChange={(v) => set({ wireApi: v as 'responses' | 'chat' })}
+                    />
+                    <small>{t(lang, 'form.wireApiHint')}</small>
+                  </label>
+                )}
+                <label>
+                  {t(lang, 'form.alias')}
+                  <input
+                    value={form.alias ?? ''}
+                    onChange={(e) => set({ alias: e.target.value })}
+                    placeholder="glm、ds、kimi…"
+                  />
+                  <small>{t(lang, 'form.aliasHint')}</small>
+                </label>
+              </div>
+            )}
+          </section>
+        ) : (
+          <section className="card">
+            <h3>{t(lang, 'form.section.advanced')}</h3>
+            <div className="form">
               <label>
-                {t(lang, 'form.wireApi')}
+                {t(lang, 'form.modelCodex')}
+                <input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="gpt-5-codex" />
+              </label>
+              <label>
+                wire_api
                 <Dropdown
                   value={form.wireApi}
                   options={[
-                    { value: 'chat', label: 'Chat Completions' },
-                    { value: 'responses', label: 'Responses API' }
+                    { value: 'responses', label: 'responses' },
+                    { value: 'chat', label: 'chat' }
                   ]}
                   onChange={(v) => set({ wireApi: v as 'responses' | 'chat' })}
                 />
-                <small>{t(lang, 'form.wireApiHint')}</small>
               </label>
-            )}
-            <label>
-              {t(lang, 'form.alias')}
-              <input
-                value={form.alias ?? ''}
-                onChange={(e) => set({ alias: e.target.value })}
-                placeholder="glm、ds、kimi…"
-              />
-              <small>{t(lang, 'form.aliasHint')}</small>
-            </label>
-          </>
-        ) : (
-          <>
-            <label>
-              {t(lang, 'form.modelCodex')}
-              <input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="gpt-5-codex" />
-            </label>
-            <label>
-              wire_api
-              <Dropdown
-                value={form.wireApi}
-                options={[
-                  { value: 'responses', label: 'responses' },
-                  { value: 'chat', label: 'chat' }
-                ]}
-                onChange={(v) => set({ wireApi: v as 'responses' | 'chat' })}
-              />
-            </label>
-          </>
+            </div>
+          </section>
         )}
-
-        <label>
-          {t(lang, 'form.notes')}
-          <textarea value={form.notes} onChange={(e) => set({ notes: e.target.value })} rows={2} />
-        </label>
 
         {err && <div className="form-error">{err}</div>}
 
-        <div className="form-actions">
-          <button className="btn" onClick={onClose} disabled={saving}>
+        <div className="form-actions form-page-actions">
+          <button className="btn" onClick={onBack} disabled={saving}>
             {t(lang, 'btn.cancel')}
           </button>
           <button className="btn primary" onClick={submit} disabled={saving}>
@@ -272,6 +248,20 @@ export default function ProviderForm({
           </button>
         </div>
       </div>
-    </Modal>
+    </div>
+  )
+}
+
+/** 内联厂商徽章（Base URL 识别提示） */
+function VendorChipInline({ baseUrl }: { baseUrl: string }) {
+  const vendor = detectVendor(baseUrl)
+  if (!vendor) return null
+  return (
+    <span className="vendor-chip" title={`已识别厂商：${vendor.name}`}>
+      <span className="vendor-letter" style={{ background: vendor.color }}>
+        {vendor.letter}
+      </span>
+      <span>{vendor.name}</span>
+    </span>
   )
 }
