@@ -1,6 +1,6 @@
 {
   "name": "cc-switch-local",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "本地优先的 AI 编码工具 API 供应商管理与一键切换工具（Claude Code / Codex）",
   "main": "./out/main/index.js",
   "author": "cc-switch-local contributors",
