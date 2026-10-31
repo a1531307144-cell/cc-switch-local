@@ -69,11 +69,11 @@ function userContentOf(blocks: AnthropicBlock[]): string | { type: string; text?
   return parts
 }
 
-/** Anthropic Messages 请求体 → OpenAI Chat Completions 请求体 */
-export function anthropicToOpenAI(body: Record<string, unknown>, provider: Provider): OpenAIBody {
+/** Anthropic Messages 请求体 → OpenAI Chat Completions 请求体；modelOverride 用于聚合模式的前缀剥离结果 */
+export function anthropicToOpenAI(body: Record<string, unknown>, provider: Provider, modelOverride?: string): OpenAIBody {
   const out: OpenAIBody = {
-    // 上游模型名：优先用供应商配置的 model（客户端发的是 claude-* 名，OpenAI 端点不认）
-    model: provider.model || (typeof body.model === 'string' ? body.model : 'gpt-4o-mini'),
+    // 上游模型名：聚合前缀剥离结果 > 供应商配置的 model > 客户端请求的 model
+    model: modelOverride || provider.model || (typeof body.model === 'string' ? body.model : 'gpt-4o-mini'),
     messages: []
   }
   if (typeof body.max_tokens === 'number') out.max_tokens = body.max_tokens

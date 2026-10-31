@@ -12,6 +12,7 @@ export interface FormDraft {
   apiKey: string
   keyType: KeyType
   protocol: 'anthropic' | 'openai'
+  alias: string
   model: string
   wireApi: 'responses' | 'chat'
   notes: string
@@ -25,6 +26,7 @@ export function emptyDraft(tool: ToolId): FormDraft {
     apiKey: '',
     keyType: 'auth_token',
     protocol: 'anthropic',
+    alias: '',
     model: '',
     wireApi: 'responses',
     notes: ''
@@ -206,6 +208,15 @@ export default function ProviderForm({
             <label>
               {t(lang, 'form.modelClaude')}
               <input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="claude-sonnet-4-5" />
+            </label>
+            <label>
+              {t(lang, 'form.alias')}
+              <input
+                value={form.alias ?? ''}
+                onChange={(e) => set({ alias: e.target.value })}
+                placeholder="glm、ds、kimi…"
+              />
+              <small>{t(lang, 'form.aliasHint')}</small>
             </label>
           </>
         ) : (

@@ -22,9 +22,10 @@ export function validateSettingsPatch(patch: Partial<AppSettings>): void {
   if (patch.theme !== undefined && !THEMES.includes(patch.theme)) throw new Error('非法的主题')
   if (patch.language !== undefined && patch.language !== 'zh' && patch.language !== 'en') throw new Error('非法的语言')
   if (patch.router !== undefined) {
-    const r = patch.router as { claude?: unknown; codex?: unknown; port?: unknown }
+    const r = patch.router as { claude?: unknown; codex?: unknown; port?: unknown; aggregate?: unknown }
     if (!r || typeof r !== 'object' || Array.isArray(r)) throw new Error('非法的路由设置')
     if (typeof r.claude !== 'boolean' || typeof r.codex !== 'boolean') throw new Error('非法的路由开关')
+    if (r.aggregate !== undefined && typeof r.aggregate !== 'boolean') throw new Error('非法的聚合开关')
     if (
       r.port !== undefined &&
       (typeof r.port !== 'number' || !Number.isInteger(r.port) || r.port <= 0 || r.port > 65535)

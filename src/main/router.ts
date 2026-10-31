@@ -1,6 +1,7 @@
 import http from 'node:http'
 import { Readable } from 'node:stream'
 import { loadStore } from './store'
+import { resolveAggregatePrefix, aggregateAliasOf } from '../shared/aggregate'
 import { anthropicToOpenAI, estimateAnthropicTokens, openAIErrorToAnthropic, openAIToAnthropicResponse, pumpOpenAIToAnthropic } from './convert'
 import type { Provider, RouterStatus, ToolId } from '../shared/types'
 
@@ -161,21 +162,52 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   const { tool, rest } = route
   const store = loadStore()
   const current = store.current[tool] ? store.providers.find((p) => p.id === store.current[tool]) ?? null : null
-  const chain: Provider[] = [
+  const aggregateEnabled = tool === 'claude' && store.settings.router?.aggregate === true
+
+  const baseChain: Provider[] = [
     ...(current ? [current] : []),
     ...store.providers.filter((p) => p.tool === tool && p.id !== current?.id)
   ].slice(0, MAX_ATTEMPTS)
-
-  if (chain.length === 0) {
-    stats[tool].errors++
-    jsonError(res, 502, `本机路由没有可用的 ${tool} 供应商：请先在应用内添加并选择供应商`)
-    return
-  }
 
   const body = await readBody(req).catch(() => null)
   if (body === null) {
     stats[tool].errors++
     jsonError(res, 413, '请求体过大或读取失败')
+    return
+  }
+
+  let aggregateHit: { provider: Provider; model: string } | null = null
+  if (aggregateEnabled && rest.split('?')[0] === '/v1/messages') {
+    try {
+      const ab = JSON.parse(body.toString('utf8')) as { model?: unknown }
+      const model = typeof ab.model === 'string' ? ab.model : ''
+      if (model.includes('/')) {
+        aggregateHit = resolveAggregatePrefix(store.providers.filter((p) => p.tool === 'claude'), model)
+        if (!aggregateHit) {
+          stats[tool].errors++
+          const aliases = store.providers
+            .filter((p) => p.tool === 'claude')
+            .map((p) => aggregateAliasOf(p))
+            .filter((a): a is string => !!a)
+          jsonError(res, 400, `未知的聚合前缀「${model.split('/')[0]}」。可用前缀：${aliases.join('、') || '（无——请先为供应商设置别名或英文）名称'}`)
+          return
+        }
+      }
+    } catch {
+      /* 请求体不是 JSON：交给后续流程报错 */
+    }
+  }
+
+  const chain: Provider[] = aggregateHit
+    ? [
+        aggregateHit.provider,
+        ...store.providers.filter((p) => p.tool === tool && p.id !== aggregateHit!.provider.id)
+      ].slice(0, MAX_ATTEMPTS)
+    : baseChain
+
+  if (chain.length === 0) {
+    stats[tool].errors++
+    jsonError(res, 502, `本机路由没有可用的 ${tool} 供应商：请先在应用内添加并选择供应商`)
     return
   }
 
@@ -211,7 +243,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         jsonError(res, 400, '请求体不是合法 JSON')
         return
       }
-      const oaBody = anthropicToOpenAI(anthropicBody, provider)
+      const oaBody = anthropicToOpenAI(anthropicBody, provider, aggregateHit?.model)
       const upstream = provider.baseUrl.replace(/\/+$/, '') + '/chat/completions'
       try {
         const ac = new AbortController()
@@ -267,7 +299,17 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         continue
       }
     }
-    // ── Anthropic 协议供应商：原样透传 ──
+    // ── Anthropic 协议供应商：原样透传（聚合模式下重写 model 为剥离前缀后的名字） ──
+    let upstreamBody: Uint8Array<ArrayBuffer> = new Uint8Array(body)
+    if (aggregateHit) {
+      try {
+        const ab = JSON.parse(body.toString('utf8')) as Record<string, unknown>
+        ab.model = aggregateHit.model
+        upstreamBody = new Uint8Array(Buffer.from(JSON.stringify(ab), 'utf8'))
+      } catch {
+        /* 请求体不是 JSON：保持原样透传 */
+      }
+    }
     const upstream = provider.baseUrl.replace(/\/+$/, '') + rest
     try {
       const ac = new AbortController()
@@ -277,7 +319,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         r = await fetch(upstream, {
           method: req.method,
           headers: buildUpstreamHeaders(tool, provider, req),
-          body: req.method === 'GET' || req.method === 'HEAD' ? undefined : new Uint8Array(body),
+          body: req.method === 'GET' || req.method === 'HEAD' ? undefined : upstreamBody,
           signal: ac.signal
         })
       } finally {

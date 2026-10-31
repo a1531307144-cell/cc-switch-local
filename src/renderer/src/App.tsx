@@ -3,6 +3,7 @@ import type { DragEvent } from 'react'
 import type { DeeplinkResult, Lang, Provider, RouterStatus, StoreShape, ToolId, ToolStatus } from '../../shared/types'
 import { t } from '../../shared/i18n'
 import { detectVendor } from '../../shared/vendors'
+import { aggregateEntries } from '../../shared/aggregate'
 import ProviderCard from './components/ProviderCard'
 import ProviderForm, { emptyDraft, type FormDraft } from './components/ProviderForm'
 import SettingsPanel from './components/SettingsPanel'
@@ -276,6 +277,7 @@ export default function App() {
       apiKey: d.apiKey.trim(),
       keyType: d.keyType,
       protocol: d.tool === 'claude' ? d.protocol : undefined,
+      alias: d.tool === 'claude' ? d.alias.trim() : undefined,
       model: d.model.trim(),
       wireApi: d.wireApi,
       notes: d.notes.trim()
@@ -341,6 +343,23 @@ export default function App() {
       const r = await window.api.routerSet(activeTool, enabling)
       setRouterState(r)
       notify(enabling ? tr('router.enabledToast') : tr('router.disabledToast'))
+      await refresh()
+    } catch (e) {
+      notify((e as Error).message, 'err')
+    }
+  }
+
+  const aggregateOn = store.settings.router?.aggregate === true
+  const aggEntries = aggregateEntries(store.providers.filter((p) => p.tool === activeTool))
+  const aggTooltip = aggregateOn
+    ? tr('agg.tipOn', { list: aggEntries.map((x) => `${x.alias}${x.model ? `/${x.model}` : ''}`).join('、') || tr('agg.none') })
+    : tr('agg.tipOff')
+
+  const toggleAggregate = async () => {
+    try {
+      const r = await window.api.routerSetAggregate(activeTool, !aggregateOn)
+      setRouterState(r)
+      notify(!aggregateOn ? tr('agg.enabledToast') : tr('agg.disabledToast'))
       await refresh()
     } catch (e) {
       notify((e as Error).message, 'err')
@@ -513,6 +532,16 @@ export default function App() {
                   >
                     {routerState?.[activeTool]?.enabled ? tr('router.on') : tr('router.off')}
                   </button>
+                  {activeTool === 'claude' && (
+                    <button
+                      type="button"
+                      className={`btn sm ${aggregateOn ? 'primary' : ''}`}
+                      onClick={toggleAggregate}
+                      title={aggTooltip}
+                    >
+                      {aggregateOn ? tr('agg.on') : tr('agg.off')}
+                    </button>
+                  )}
                   <div
                     className="dd"
                     onBlur={() => {
@@ -598,6 +627,7 @@ export default function App() {
                             apiKey: x.apiKey,
                             keyType: x.keyType,
                             protocol: x.tool === 'claude' ? x.protocol ?? 'anthropic' : 'anthropic',
+                            alias: x.alias ?? '',
                             model: x.model ?? '',
                             wireApi: x.wireApi ?? 'responses',
                             notes: x.notes ?? ''

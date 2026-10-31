@@ -15,6 +15,8 @@ export interface Provider {
   keyType: KeyType
   /** claude 用：接口协议（缺省 anthropic）；openai 协议只能经本机路由使用（自动转换） */
   protocol?: Protocol
+  /** 聚合模式的模型前缀别名（ASCII [A-Za-z0-9_-]，缺省时由名称自动推导；纯中文名不可前缀寻址） */
+  alias?: string
   /** 可选：codex 会写入 config.toml 的 model；claude 仅作测试请求的模型名 */
   model?: string
   /** codex 专用：自定义 provider 的 wire_api */
@@ -32,6 +34,8 @@ export interface ProviderInput {
   apiKey: string
   keyType?: KeyType
   protocol?: Protocol
+  /** 聚合模式别名（同 Provider.alias） */
+  alias?: string
   model?: string
   wireApi?: 'responses' | 'chat'
   notes?: string
@@ -46,7 +50,13 @@ export interface AppSettings {
   /** 侧栏折叠（v0.8.0 起；缺省展开） */
   sidebarCollapsed?: boolean
   /** 本机路由模式（每工具独立开关；port 缺省 15731；缺省 false） */
-  router?: { claude: boolean; codex: boolean; port?: number }
+  router?: {
+    claude: boolean
+    codex: boolean
+    port?: number
+    /** 聚合模式（仅 claude 路由）：按请求模型名前缀「别名/模型」分发到对应供应商 */
+    aggregate?: boolean
+  }
 }
 
 export interface RouterStatus {
@@ -199,6 +209,8 @@ export interface Api {
   usageGet(): Promise<UsageStats>
   routerStatus(): Promise<RouterStatus>
   routerSet(tool: ToolId, enabled: boolean): Promise<RouterStatus>
+  /** 聚合模式开关（仅 claude 路由）：开启后按模型名前缀「别名/模型」分发 */
+  routerSetAggregate(tool: ToolId, enabled: boolean): Promise<RouterStatus>
   balanceGet(input: { baseUrl: string; apiKey: string }): Promise<BalanceResult>
   clearAllData(): Promise<{ removed: string[] }>
   onDeeplinkProvider(cb: (r: DeeplinkResult) => void): () => void

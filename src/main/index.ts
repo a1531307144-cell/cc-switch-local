@@ -148,6 +148,12 @@ function validateProviderInput(input: ProviderInput): void {
   if (input.keyType !== undefined && !KEY_TYPES.includes(input.keyType)) throw new Error('非法的 Key 类型')
   if (input.wireApi !== undefined && !WIRE_APIS.includes(input.wireApi)) throw new Error('非法的 wire_api')
   if (input.protocol !== undefined && !PROTOCOLS.includes(input.protocol)) throw new Error('非法的接口协议')
+  if (
+    input.alias !== undefined &&
+    (typeof input.alias !== 'string' || (input.alias !== '' && !/^[A-Za-z0-9_-]{1,40}$/.test(input.alias)))
+  ) {
+    throw new Error('聚合别名仅允许字母/数字/下划线/中划线（1-40 字符）')
+  }
   if (input.model !== undefined && (!isStr(input.model) || input.model.length > 200)) throw new Error('模型名过长')
   if (input.notes !== undefined && (!isStr(input.notes) || input.notes.length > 2000)) throw new Error('备注过长')
   if (input.id !== undefined && (!isStr(input.id) || input.id.length > 64)) throw new Error('非法的 id')
@@ -171,6 +177,7 @@ function registerIpc(): void {
         apiKey: input.apiKey,
         keyType: input.keyType ?? existing.keyType,
         protocol: input.protocol ?? (existing.tool === 'claude' ? existing.protocol : undefined),
+        alias: input.alias !== undefined ? input.alias || undefined : existing.alias,
         model: input.model || undefined,
         wireApi: input.wireApi || undefined,
         notes: input.notes || undefined,
@@ -189,6 +196,7 @@ function registerIpc(): void {
       apiKey: input.apiKey,
       keyType: input.keyType ?? 'auth_token',
       protocol: input.tool === 'claude' ? input.protocol ?? 'anthropic' : undefined,
+      alias: input.alias || undefined,
       model: input.model || undefined,
       wireApi: input.wireApi || undefined,
       notes: input.notes || undefined,
@@ -313,6 +321,9 @@ function registerIpc(): void {
         throw new Error('当前供应商是 OpenAI 兼容协议，必须经本机路由使用；请先切换到其它供应商')
       }
     }
+    if (!enabled && tool === 'claude' && store.settings.router?.aggregate === true) {
+      throw new Error('聚合模式开启中，本机路由不能关闭；请先关闭聚合模式')
+    }
     const router = { claude: store.settings.router?.claude ?? false, codex: store.settings.router?.codex ?? false }
     router[tool] = enabled
     const needRouter = router.claude || router.codex
@@ -329,6 +340,31 @@ function registerIpc(): void {
     const provider = store.current[tool] ? store.providers.find((p) => p.id === store.current[tool]) ?? null : null
     if (tool === 'claude') await claude.switchClaude(provider, enabled)
     else await codex.switchCodex(provider, enabled)
+    return routerStatus()
+  })
+
+  ipcMain.handle('router:setAggregate', async (_e, tool: ToolId, enabled: boolean) => {
+    assertTool(tool)
+    if (tool !== 'claude') throw new Error('聚合模式目前仅支持 Claude Code 路由')
+    if (typeof enabled !== 'boolean') throw new Error('非法的开关值')
+    const store = loadStore()
+    // 聚合配置同样落在客户端文件里（指向本机路由），需要路由进程在线
+    await startRouter().catch((e: unknown) => {
+      throw new Error(`路由服务启动失败：${(e as Error).message}`)
+    })
+    const router = {
+      claude: store.settings.router?.claude ?? false,
+      codex: store.settings.router?.codex ?? false,
+      ...(store.settings.router?.port !== undefined ? { port: store.settings.router.port } : {}),
+      ...(store.settings.router?.aggregate !== undefined ? { aggregate: store.settings.router.aggregate } : {})
+    }
+    router.aggregate = enabled
+    store.settings.router = router
+    await saveStore(store)
+    // 开启聚合：配置指向本机路由（当前供应商继续作为无前缀请求的兜底）；关闭：按当前状态重写
+    const provider = store.current.claude ? store.providers.find((p) => p.id === store.current.claude) ?? null : null
+    if (enabled || router.claude) await claude.switchClaude(provider, true)
+    else await claude.switchClaude(provider, false)
     return routerStatus()
   })
 

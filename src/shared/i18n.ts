@@ -63,6 +63,33 @@ export const STRINGS = {
     en: 'Switched back to direct mode: restart tool sessions to apply'
   },
 
+  // ── 聚合模式 ──
+  'agg.off': { zh: '聚合: 关', en: 'Aggregate: OFF' },
+  'agg.on': { zh: '聚合: 开', en: 'Aggregate: ON' },
+  'agg.tipOff': {
+    zh: '开启聚合模式：同一个配置里用「别名/模型」直接选用所有供应商的模型（如 ds/deepseek-chat），无需来回切换。请在各供应商上设置英文别名（纯英文名会自动推导）',
+    en: 'Enable aggregate mode: use "alias/model" (e.g. ds/deepseek-chat) in one config to reach every provider — no more switching. Set an ASCII alias per provider (English names auto-derive one)'
+  },
+  'agg.tipOn': {
+    zh: '聚合模式运行中：请求按模型名前缀「别名/模型」分发，无前缀的请求走当前供应商。可用：{list}',
+    en: 'Aggregate mode running: requests are dispatched by model prefix "alias/model"; unprefixed requests go to the current provider. Available: {list}'
+  },
+  'agg.none': { zh: '（暂无可前缀寻址的供应商——请设置英文别名或英文名称）', en: '(no prefix-addressable providers — set ASCII aliases or English names)' },
+  'agg.enabledToast': {
+    zh: '聚合模式已开启：客户端里用「别名/模型」选模型（如 ds/deepseek-chat），无前缀走当前供应商；重启会话后生效',
+    en: 'Aggregate mode enabled: pick models with "alias/model" (e.g. ds/deepseek-chat); unprefixed goes to current. Restart sessions to apply'
+  },
+  'agg.disabledToast': { zh: '聚合模式已关闭：恢复按当前供应商转发', en: 'Aggregate mode disabled: forwarding to the current provider as before' },
+  'agg.emptyHint': {
+    zh: '还没有可前缀寻址的供应商：给供应商起英文名或设置别名（新建/编辑表单里）后即可用「别名/模型」直达',
+    en: 'No prefix-addressable providers yet: give providers English names or aliases (in the form) to reach them via "alias/model"'
+  },
+  'form.alias': { zh: '聚合别名（可选）', en: 'Aggregate alias (optional)' },
+  'form.aliasHint': {
+    zh: '聚合模式下用「别名/模型」直达该供应商；仅限字母/数字/下划线/中划线。英文名称会自动推导，无需填写',
+    en: 'Used as the "alias/model" prefix in aggregate mode; letters/digits/underscore/dash only. English names auto-derive one'
+  },
+
   // ── 更新横幅 ──
   'update.available': { zh: '发现新版本 v{v}', en: 'New version v{v} available' },
   'update.downloadNow': { zh: '立即下载', en: 'Download now' },

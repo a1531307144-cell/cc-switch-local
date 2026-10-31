@@ -20,6 +20,7 @@ const api: Api = {
   usageGet: () => ipcRenderer.invoke('usage:get'),
   routerStatus: () => ipcRenderer.invoke('router:status'),
   routerSet: (tool: ToolId, enabled: boolean) => ipcRenderer.invoke('router:set', tool, enabled),
+  routerSetAggregate: (tool: ToolId, enabled: boolean) => ipcRenderer.invoke('router:setAggregate', tool, enabled),
   balanceGet: (input: { baseUrl: string; apiKey: string }) => ipcRenderer.invoke('balance:get', input),
   clearAllData: () => ipcRenderer.invoke('data:clearAll'),
   onDeeplinkProvider: (cb: (r: DeeplinkResult) => void) => {

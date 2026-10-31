@@ -14,6 +14,7 @@ import { cloneProvider, reorderProviders, validateSettingsPatch } from './librar
 import { switchProviderForTool } from './switcher'
 import { routerPort, routerStatus, startRouter, stopRouter } from './router'
 import { detectVendor } from '../shared/vendors'
+import { aggregateAliasOf, resolveAggregatePrefix } from '../shared/aggregate'
 import http from 'node:http'
 
 interface Check {
@@ -871,6 +872,164 @@ export async function runSelfTest(): Promise<void> {
       const env2 = data2.env as Record<string, unknown>
       assert(env2.ANTHROPIC_BASE_URL === pa.baseUrl && env2.ANTHROPIC_AUTH_TOKEN === pa.apiKey, '切回 Anthropic 家应为直连配置')
       stopRouter()
+    })
+
+    await step('聚合：纯函数（别名推导/前缀解析/大小写不敏感）', async () => {
+      assert(aggregateAliasOf({ ...pa, name: 'My Relay', alias: undefined }) === 'my-relay', '英文名应自动推导别名')
+      assert(aggregateAliasOf({ ...pa, name: '智谱 GLM', alias: undefined }) === 'glm', '中英混合名应保留 ASCII 部分')
+      assert(aggregateAliasOf({ ...pa, name: '纯中文名', alias: undefined }) === null, '纯中文名不可前缀寻址')
+      assert(aggregateAliasOf({ ...pa, alias: 'DS' }) === 'ds', '显式别名优先且小写化')
+      const hit = resolveAggregatePrefix([{ ...pa, alias: 'ds' }], 'DS/deepseek-chat')
+      assert(hit?.provider.id === pa.id && hit.model === 'deepseek-chat', '前缀解析应不区分大小写并剥离前缀')
+      assert(resolveAggregatePrefix([{ ...pa, alias: 'ds' }], 'claude-sonnet') === null, '无前缀模型应返回 null')
+      assert(resolveAggregatePrefix([{ ...pa, alias: 'ds' }], 'ds/') === null, '空模型名应返回 null')
+      assert(resolveAggregatePrefix([{ ...pa, alias: 'ds' }], 'zz/m') === null, '未知前缀应返回 null')
+    })
+
+    await step('聚合：前缀分发（anthropic 直连 + openai 转换 + 无前缀兜底 + 未知前缀 400）', async () => {
+      const hitA: { url: string; model: string }[] = []
+      const upA = http.createServer((req, res) => {
+        let b = ''
+        req.on('data', (c: Buffer) => (b += c))
+        req.on('end', () => {
+          hitA.push({ url: req.url ?? '', model: (JSON.parse(b) as { model?: string }).model ?? '' })
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ id: 'msg_a', type: 'message', role: 'assistant', content: [{ type: 'text', text: 'ok-a' }], usage: { input_tokens: 1, output_tokens: 1 } }))
+        })
+      })
+      const hitB: { model: string }[] = []
+      const upB = http.createServer((req, res) => {
+        let b = ''
+        req.on('data', (c: Buffer) => (b += c))
+        req.on('end', () => {
+          hitB.push({ model: (JSON.parse(b) as { model?: string }).model ?? '' })
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ id: 'chatcmpl-b', model: 'x', choices: [{ index: 0, message: { role: 'assistant', content: 'ok-b' }, finish_reason: 'stop' }], usage: { prompt_tokens: 2, completion_tokens: 2 } }))
+        })
+      })
+      await new Promise<void>((r) => upA.listen(0, '127.0.0.1', () => r()))
+      await new Promise<void>((r) => upB.listen(0, '127.0.0.1', () => r()))
+      const aAddr = upA.address() as { port: number }
+      const bAddr = upB.address() as { port: number }
+      const s = loadStore()
+      if (!s.providers.some((p) => p.id === pe.id)) s.providers.push(pe)
+      const paS = s.providers.find((p) => p.id === pa.id)
+      const peS = s.providers.find((p) => p.id === pe.id)
+      assert(!!paS && !!peS, 'pa/pe 应存在')
+      paS!.baseUrl = `http://127.0.0.1:${aAddr.port}`
+      peS!.baseUrl = `http://127.0.0.1:${bAddr.port}`
+      peS!.alias = 'oa'
+      // 前缀寻址的 anthropic 家（alias aa，与 pa 共用同一个 mock，靠 model 断言区分）
+      if (!s.providers.some((p) => p.alias === 'aa')) {
+        s.providers.push({
+          id: newId(),
+          tool: 'claude',
+          name: '聚合家A',
+          baseUrl: `http://127.0.0.1:${aAddr.port}`,
+          apiKey: 'sk-agg-a-000000001',
+          keyType: 'auth_token',
+          alias: 'aa',
+          model: 'm-a',
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        })
+      }
+      s.current.claude = pa.id
+      const r0 = s.settings.router ?? { claude: false, codex: false }
+      s.settings.router = { ...r0, aggregate: true }
+      await saveStore(s)
+      await startRouter()
+      try {
+        const post = (model: string): Promise<Response> =>
+          fetch(`http://127.0.0.1:${routerPort()}/claude/v1/messages`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ model, max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] })
+          })
+        // 前缀 aa → anthropic 家直连，model 剥离
+        const r1 = await post('aa/m-b')
+        assert(r1.status === 200, `aa 前缀应 200，实际 ${r1.status}`)
+        assert(hitA[0]?.model === 'm-b', `前缀应剥离，上游收到 m-b，实际 ${hitA[0]?.model}`)
+        // 前缀 oa → openai 家转换，model 用剥离结果覆盖 provider.model
+        const r2 = await post('oa/m-c')
+        assert(r2.status === 200, `oa 前缀应 200，实际 ${r2.status}`)
+        assert(hitB[0]?.model === 'm-c', `openai 家应收到剥离后的 m-c，实际 ${hitB[0]?.model}`)
+        // 无前缀 → 走当前供应商（pa），model 原样
+        const r3 = await post('claude-sonnet-4-5')
+        assert(r3.status === 200 && hitA[1]?.model === 'claude-sonnet-4-5', `无前缀应走当前家且 model 原样，实际 ${JSON.stringify(hitA[1])}`)
+        // 未知前缀 → 400
+        const r4 = await post('zz/m-x')
+        assert(r4.status === 400, `未知前缀应 400，实际 ${r4.status}`)
+        const j4 = (await r4.json()) as { error?: { message?: string } }
+        assert(j4.error?.message?.includes('未知的聚合前缀') === true, `错误信息应说明未知前缀：${JSON.stringify(j4)}`)
+      } finally {
+        stopRouter()
+        const s2 = loadStore()
+        if (s2.settings.router) s2.settings.router.aggregate = false
+        await saveStore(s2)
+        upA.close()
+        upB.close()
+      }
+    })
+
+    await step('聚合：前缀家故障 500 → 兜底链接管且模型已剥离', async () => {
+      const dead = http.createServer((_req, res) => {
+        res.writeHead(500)
+        res.end('{}')
+      })
+      const hitModel: string[] = []
+      const up = http.createServer((req, res) => {
+        let b = ''
+        req.on('data', (c: Buffer) => (b += c))
+        req.on('end', () => {
+          hitModel.push((JSON.parse(b) as { model?: string }).model ?? '')
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ id: 'msg_f', type: 'message', role: 'assistant', content: [{ type: 'text', text: 'ok' }], usage: { input_tokens: 1, output_tokens: 1 } }))
+        })
+      })
+      await new Promise<void>((r) => dead.listen(0, '127.0.0.1', () => r()))
+      await new Promise<void>((r) => up.listen(0, '127.0.0.1', () => r()))
+      const deadAddr = dead.address() as { port: number }
+      const upAddr = up.address() as { port: number }
+      const s = loadStore()
+      if (!s.providers.some((p) => p.id === pe.id)) s.providers.push(pe)
+      const paS = s.providers.find((p) => p.id === pa.id)
+      assert(!!paS, 'pa 应存在')
+      paS!.baseUrl = `http://127.0.0.1:${upAddr.port}`
+      const pf = {
+        id: newId(),
+        tool: 'claude' as const,
+        name: '聚合故障家',
+        baseUrl: `http://127.0.0.1:${deadAddr.port}`,
+        apiKey: 'sk-agg-dead-00000001',
+        keyType: 'auth_token' as const,
+        alias: 'dead',
+        model: 'm-dead',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+      s.providers.push(pf)
+      s.current.claude = pa.id
+      const r0 = s.settings.router ?? { claude: false, codex: false }
+      s.settings.router = { ...r0, aggregate: true }
+      await saveStore(s)
+      await startRouter()
+      try {
+        const r = await fetch(`http://127.0.0.1:${routerPort()}/claude/v1/messages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ model: 'dead/m-x', max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] })
+        })
+        assert(r.status === 200, `前缀家 500 后应由兜底家服务 200，实际 ${r.status}`)
+        assert(hitModel[0] === 'm-x', `兜底家应收到剥离后的模型名 m-x，实际 ${hitModel[0]}`)
+      } finally {
+        stopRouter()
+        const s2 = loadStore()
+        if (s2.settings.router) s2.settings.router.aggregate = false
+        await saveStore(s2)
+        dead.close()
+        up.close()
+      }
     })
 
     await step('余额查询：mock 上游解析 + 401 报错 + 不支持的厂商拒绝', async () => {
