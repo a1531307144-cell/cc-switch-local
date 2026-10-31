@@ -22,11 +22,53 @@ const UPSTREAM_TIMEOUT_MS = 600_000
 /** 响应体阶段：超过这个时长没有任何新数据就断开（头部阶段超时由 UPSTREAM_TIMEOUT_MS 覆盖） */
 const BODY_IDLE_TIMEOUT_MS = 120_000
 
+/** 熔断器（v0.8.7）：连续失败达阈值后冷却一段时间，期间故障转移直接跳过该供应商 */
+const BREAKER_THRESHOLD = 3
+const BREAKER_COOLDOWN_MS = 5 * 60_000
+
 let server: http.Server | null = null
 let lastError = ''
 const stats: Record<ToolId, { requests: number; errors: number }> = {
   claude: { requests: 0, errors: 0 },
   codex: { requests: 0, errors: 0 }
+}
+
+const breaker = new Map<string, { fails: number; until: number }>()
+
+function breakerKey(p: Provider): string {
+  return p.id || p.baseUrl
+}
+
+/** 连接失败/5xx/429 记一次失败；达到阈值进入冷却 */
+function recordFailure(p: Provider): void {
+  const k = breakerKey(p)
+  const cur = breaker.get(k) ?? { fails: 0, until: 0 }
+  cur.fails += 1
+  if (cur.fails >= BREAKER_THRESHOLD) cur.until = Date.now() + BREAKER_COOLDOWN_MS
+  breaker.set(k, cur)
+}
+
+/** 上游有响应（含 4xx，说明服务活着）即清零 */
+function recordSuccess(p: Provider): void {
+  breaker.delete(breakerKey(p))
+}
+
+function isCooling(p: Provider): boolean {
+  const b = breaker.get(breakerKey(p))
+  return !!b && b.until > Date.now()
+}
+
+/**
+ * 从候选链里剔除冷却中的供应商；全被剔除时保留原链（宁可多撞一次也不整体断供）。
+ */
+function applyBreaker(chain: Provider[]): Provider[] {
+  const alive = chain.filter((p) => !isCooling(p))
+  return alive.length > 0 ? alive : chain
+}
+
+/** 仅供自测：清空熔断状态 */
+export function resetBreakerForTest(): void {
+  breaker.clear()
 }
 
 export function routerPort(): number {
@@ -204,6 +246,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         ...store.providers.filter((p) => p.tool === tool && p.id !== aggregateHit!.provider.id)
       ].slice(0, MAX_ATTEMPTS)
     : baseChain
+  const effectiveChain = applyBreaker(chain)
 
   if (chain.length === 0) {
     stats[tool].errors++
@@ -212,8 +255,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   }
 
   const attempts: string[] = []
-  for (let i = 0; i < chain.length; i++) {
-    const provider = chain[i]
+  for (let i = 0; i < effectiveChain.length; i++) {
+    const provider = effectiveChain[i]
     // ── OpenAI 协议供应商：走协议转换路径（v0.8.3） ──
     const openaiMode = tool === 'claude' && provider.protocol === 'openai'
     if (openaiMode) {
@@ -259,12 +302,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         } finally {
           clearTimeout(timer)
         }
-        // 5xx/429 → 换下一家（响应体丢弃）
-        if ((r.status >= 500 || r.status === 429) && i < chain.length - 1) {
+        // 5xx/429 → 换下一家（响应体丢弃），并给熔断器记一次失败
+        if ((r.status >= 500 || r.status === 429) && i < effectiveChain.length - 1) {
           attempts.push(`${provider.name}: HTTP ${r.status}`)
+          recordFailure(provider)
           await r.arrayBuffer().catch(() => {})
           continue
         }
+        recordSuccess(provider)
         stats[tool].requests++
         if (!r.ok) {
           const errText = await r.text().catch(() => '')
@@ -296,6 +341,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         return
       } catch (e) {
         attempts.push(`${provider.name}: ${(e as Error).message}`)
+        recordFailure(provider)
         continue
       }
     }
@@ -326,13 +372,15 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         clearTimeout(timer)
       }
 
-      // 5xx/429 → 换下一家（响应体丢弃）
-      if ((r.status >= 500 || r.status === 429) && i < chain.length - 1) {
+      // 5xx/429 → 换下一家（响应体丢弃），并给熔断器记一次失败
+      if ((r.status >= 500 || r.status === 429) && i < effectiveChain.length - 1) {
         attempts.push(`${provider.name}: HTTP ${r.status}`)
+        recordFailure(provider)
         await r.arrayBuffer().catch(() => {})
         continue
       }
 
+      recordSuccess(provider)
       stats[tool].requests++
       const outHeaders: Record<string, string> = {}
       r.headers.forEach((v, k) => {
@@ -367,12 +415,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       }
       return
     } catch (e) {
-      // 连接失败/超时 → 下一家（记录原因便于诊断）
+      // 连接失败/超时 → 下一家（记录原因便于诊断），并给熔断器记一次失败
       attempts.push(`${provider.name}: ${(e as Error).message}`)
+      recordFailure(provider)
       continue
     }
   }
 
   stats[tool].errors++
-  jsonError(res, 502, `所有候选上游都失败了（共试 ${chain.length} 家）：${attempts.join('；')}`)
+  jsonError(res, 502, `所有候选上游都失败了（共试 ${effectiveChain.length} 家）：${attempts.join('；')}`)
 }

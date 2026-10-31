@@ -37,6 +37,7 @@ const api: Api = {
     ipcRenderer.on('deeplink:provider', l)
     return () => ipcRenderer.removeListener('deeplink:provider', l)
   },
+  deeplinkTake: () => ipcRenderer.invoke('deeplink:take'),
   settingsUpdate: (patch: Partial<AppSettings>) => ipcRenderer.invoke('settings:update', patch),
   copyText: (text: string) => ipcRenderer.invoke('app:copyText', text),
   openPath: (kind: 'data' | 'claudeConfig' | 'codexConfig') => ipcRenderer.invoke('app:openPath', kind),

@@ -13,7 +13,7 @@ import { buildProviderDeeplink, findDeeplinkInArgv, parseProviderDeeplink } from
 import { clearAppData } from './cleardata'
 import { cloneProvider, reorderProviders, validateSettingsPatch } from './library'
 import { switchProviderForTool } from './switcher'
-import { routerPort, routerStatus, startRouter, stopRouter } from './router'
+import { routerPort, routerStatus, startRouter, stopRouter, resetBreakerForTest } from './router'
 import { detectVendor } from '../shared/vendors'
 import { aggregateAliasOf, resolveAggregatePrefix } from '../shared/aggregate'
 import { listSessions, readSession } from './sessions'
@@ -564,6 +564,62 @@ export async function runSelfTest(): Promise<void> {
         stopRouter()
         ok.close()
         fail.close()
+      }
+    })
+
+    await step('本机路由：熔断器（连续 3 次 5xx 进入冷却，后续请求不再撞故障家）', async () => {
+      resetBreakerForTest()
+      let failHits = 0
+      const ok = http.createServer((_req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: true }))
+      })
+      const fail = http.createServer((_req, res) => {
+        failHits++
+        res.writeHead(500, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: 'mock down' }))
+      })
+      await new Promise<void>((r) => ok.listen(0, '127.0.0.1', () => r()))
+      await new Promise<void>((r) => fail.listen(0, '127.0.0.1', () => r()))
+      const okAddr = ok.address() as { port: number }
+      const failAddr = fail.address() as { port: number }
+      const s = loadStore()
+      const prevCurrent = s.current.claude
+      const pFail = { id: newId(), tool: 'claude' as const, name: '熔断-故障家', baseUrl: `http://127.0.0.1:${failAddr.port}`, apiKey: 'sk-breaker-fail-00001', keyType: 'auth_token' as const, createdAt: Date.now(), updatedAt: Date.now() }
+      const pOk = { id: newId(), tool: 'claude' as const, name: '熔断-正常家', baseUrl: `http://127.0.0.1:${okAddr.port}`, apiKey: 'sk-breaker-ok-000001', keyType: 'auth_token' as const, createdAt: Date.now(), updatedAt: Date.now() }
+      s.providers.unshift(pOk)
+      s.providers.unshift(pFail)
+      s.current.claude = pFail.id
+      await saveStore(s)
+      await startRouter()
+      try {
+        const hit = async (): Promise<string | null> => {
+          const r = await fetch(`http://127.0.0.1:${routerPort()}/claude/v1/messages`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: '{"ping":1}'
+          })
+          assert(r.status === 200, `故障转移应 200，实际 ${r.status}`)
+          return r.headers.get('x-ccsl-provider')
+        }
+        for (let i = 0; i < 3; i++) {
+          const who = await hit()
+          assert(who === encodeURIComponent('熔断-正常家'), `第 ${i + 1} 次请求应由正常家服务，实际 ${who}`)
+        }
+        assert(failHits === 3, `前 3 次请求每次应撞一次故障家，实际 ${failHits}`)
+        const who4 = await hit()
+        assert(who4 === encodeURIComponent('熔断-正常家'), '第 4 次请求仍应由正常家服务')
+        assert(failHits === 3, `熔断开启后不应再撞故障家，实际撞了 ${failHits} 次`)
+      } finally {
+        stopRouter()
+        ok.close()
+        fail.close()
+        resetBreakerForTest()
+        // 移除本步供应商并恢复 current：已关闭的 mock 留在库里会挤占后续步骤的故障转移窗口
+        const s2 = loadStore()
+        s2.providers = s2.providers.filter((p) => p.id !== pFail.id && p.id !== pOk.id)
+        s2.current.claude = prevCurrent
+        await saveStore(s2)
       }
     })
 
@@ -1231,6 +1287,21 @@ export async function runSelfTest(): Promise<void> {
       const reloaded = loadStore()
       assert(reloaded.providers.length === 0, '清空后库应为空')
       assert(reloaded.current.claude === null && reloaded.current.codex === null, '清空后当前选择应为空')
+    })
+
+    await step('损坏隔离：providers.json 非法 JSON 被改名隔离而非静默待覆盖（v0.8.7 审查修复 #4）', async () => {
+      await fsp.writeFile(storeFile(), '{corrupted!!', 'utf8')
+      const s = loadStore()
+      assert(s.providers.length === 0, '损坏库应回退空库')
+      const dirEntries = await fsp.readdir(path.dirname(storeFile()))
+      const quarantined = dirEntries.filter((f) => f.startsWith('providers.json.corrupt-'))
+      assert(quarantined.length === 1, `损坏文件应被隔离保留一份，实际 ${JSON.stringify(quarantined)}`)
+      if (quarantined[0]) {
+        const kept = await fsp.readFile(path.join(path.dirname(storeFile()), quarantined[0]), 'utf8')
+        assert(kept === '{corrupted!!', '隔离文件内容应与损坏原文一致（可人工抢救）')
+        await fsp.rm(path.join(path.dirname(storeFile()), quarantined[0]), { force: true })
+      }
+      assert(!fs.existsSync(storeFile()), '原路径不应再有 providers.json（等下次保存生成干净文件）')
     })
   }
 

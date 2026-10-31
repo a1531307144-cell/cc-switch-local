@@ -125,10 +125,24 @@ export function loadStore(): StoreShape {
         const text = Buffer.concat([d.update(buf.subarray(MASTER_MAGIC.length + 28)), d.final()]).toString('utf8')
         return normalizeParsed(JSON.parse(text) as Partial<StoreShape>)
       } catch {
+        // 密文可能是 master.json 不匹配而非文件损坏：绝不隔离重命名，交由用户处理
         throw new Error('供应商库解密失败：master.json 与库文件不匹配或已损坏')
       }
     }
+    // 明文库损坏：隔离改名给用户手工抢救的机会，再返回空库。
+    // 不隔离的话，下一次保存会用空库直接覆盖原文件 → 数据永久丢失（v0.8.7 审查修复 #4）
+    quarantineCorruptStore()
     return defaultsShape()
+  }
+}
+
+/** 把损坏的 providers.json 改名隔离（尽力而为，失败不阻塞启动） */
+function quarantineCorruptStore(): void {
+  try {
+    const target = `${storeFile()}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`
+    fs.renameSync(storeFile(), target)
+  } catch {
+    /* 改名失败（权限/占用）就保持原状：后续保存仍会覆盖，但至少不阻塞应用启动 */
   }
 }
 
@@ -144,6 +158,14 @@ export function saveStore(store: StoreShape): Promise<void> {
   const content = JSON.stringify(store, null, 2)
   const payload = masterKey ? encryptContent(content) : content
   const next = writeChain.then(() => atomicWrite(storeFile(), payload))
+  writeChain = next.catch(() => {})
+  return next
+}
+
+/** 明文写入（仅解除主密码时用）：走同一写队列保证与排队中的加密写串行，不会交错覆盖 */
+function saveStorePlain(store: StoreShape): Promise<void> {
+  const content = JSON.stringify(store, null, 2)
+  const next = writeChain.then(() => atomicWrite(storeFile(), content))
   writeChain = next.catch(() => {})
   return next
 }
@@ -214,10 +236,10 @@ export async function setMasterPassword(pass: string): Promise<void> {
   if (masterEnabled() && masterKey === null) throw new Error('LOCKED')
   const salt = crypto.randomBytes(16)
   const key = deriveKey(pass, salt)
-  fs.writeFileSync(
+  // 原子写：master.json 半途损坏 = 有密文库却无钥匙 = 永久锁死（v0.8.7 审查修复 #8）
+  await atomicWrite(
     masterFile(),
-    JSON.stringify({ v: 1, salt: salt.toString('hex'), verifier: verifierOf(key) }, null, 2),
-    'utf8'
+    JSON.stringify({ v: 1, salt: salt.toString('hex'), verifier: verifierOf(key) }, null, 2)
   )
   masterKey = key
   // 把现有库按新密钥重写（当前必须可读，否则上面已抛 LOCKED）
@@ -236,9 +258,12 @@ export async function clearMasterPassword(pass: string): Promise<void> {
     throw new Error('主密码错误')
   }
   const store = loadStore()
+  // 顺序关键（v0.8.7 审查修复 #7）：先落明文库、再删 master.json。
+  // 反过来的话，两步之间崩溃 = 库是密文而 master.json 已不存在 → 下次启动静默重置为空库。
+  // 现顺序任何时刻崩溃都停留在可恢复状态（明文库+master.json 并存时照常可读可解锁）。
+  await saveStorePlain(store)
   fs.rmSync(masterFile(), { force: true })
   masterKey = null
-  await saveStore(store)
 }
 
 /** 仅供自测：清空内存密钥模拟锁定态 */

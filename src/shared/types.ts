@@ -272,6 +272,8 @@ export interface Api {
   balanceGet(input: { baseUrl: string; apiKey: string }): Promise<BalanceResult>
   clearAllData(): Promise<{ removed: string[] }>
   onDeeplinkProvider(cb: (r: DeeplinkResult) => void): () => void
+  /** 拉取并清除主进程缓存的一条深链（冷启动推送竞态的兜底，v0.8.7）；无则返回 null */
+  deeplinkTake(): Promise<DeeplinkResult | null>
   settingsUpdate(patch: Partial<AppSettings>): Promise<AppSettings>
   /** 主进程侧写剪贴板（渲染层 navigator.clipboard 会被权限加固拒绝，走 IPC 才可靠） */
   copyText(text: string): Promise<boolean>

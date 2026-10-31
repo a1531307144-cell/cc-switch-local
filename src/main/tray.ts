@@ -115,8 +115,14 @@ export function createTray(onShowMainWindow: () => void): void {
   showMainWindow = onShowMainWindow
   const icon = trayIcon()
   tray = icon ? new Tray(icon) : new Tray(nativeImage.createEmpty())
-  tray.setToolTip(t(loadStore().settings.language ?? 'zh', 'tray.tooltip'))
-  refreshTray()
+  // 主密码锁定态下 loadStore 抛 LOCKED——绝不能让它炸掉 whenReady 后续链路
+  // （更新检查/路由拉起/activate 注册都在 createTray 之后）（v0.8.7 审查修复 #2）
+  try {
+    tray.setToolTip(t(loadStore().settings.language ?? 'zh', 'tray.tooltip'))
+    refreshTray()
+  } catch {
+    tray.setToolTip('CC Switch Local') // 锁定态：解锁后 master:unlock 会再刷一次
+  }
   tray.on('click', () => showMainWindow())
 }
 

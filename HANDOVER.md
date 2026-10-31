@@ -14,18 +14,18 @@
 - 用户的核心诉求是**安全性**：API Key 全部存本机、代码开源可审计、零遥测零上传。任何"把数据传出去"的功能都与项目定位冲突，不要加。
 - 对标 farion1231/cc-switch（v4.0.21 起为功能参照物）。2026-10-30 用户拍板「功能实现完全相似」为目标分多版走：v0.6.0 交付预设库 / 关键字段写入 / 用量统计 / 本机路由最简版 / 托盘 / 加密备份；**协议转换与聚合模式、MCP、多工具支持、云同步（决定不做，用加密备份文件替代）见 §9**。
 
-## 2. 当前状态（2026-10-30：v0.8.6 供应商视图双样式）
+## 2. 当前状态（2026-10-31：v0.8.7 路由熔断 + 阶段审查修复包）
 
 | 项 | 状态 |
 | --- | --- |
 | TypeScript 类型检查 | ✅ 通过 |
-| 端到端自测（37 步断言） | ✅ 37/37 通过（隔离目录 + 本地 mock 上游，未触碰真实配置；含 providerView 校验断言） |
-| CDP 实机验证 | ✅ v0.8.6 两段 10/10：方块→长条切换、横向布局几何断言（图标左/名称右、条高 53px）、重启持久化、切回方块、无横向溢出 |
-| Windows 打包 | ✅ win-unpacked 实机验证通过，NSIS 由 CI 产出 |
-| 新功能（v0.8.6） | ✅ **供应商视图双样式**：页头新增视图切换按钮，方块网格（默认）/ 横向长条（`.provider-grid.as-list`，图标居左、信息居中伸缩列、操作居右），选择持久化到 `settings.providerView`（'grid'\\|'list'，validateSettingsPatch 校验）；`.pcard-main` 包装层网格下 `display:contents` 保持原布局 |
+| 端到端自测（39 步断言） | ✅ 39/39 通过（新增熔断器、损坏隔离两步） |
+| CDP 实机验证 | ✅ v0.8.7 共 9/9：冷启动深链预填（take 兜底）、CSP 注入且页面正常、聚合开启联动路由开关并持久化、重启后路由自动拉起（含 aggregate 条件） |
+| 审查修复（2026-10-31 第二轮审查） | ✅ P1 聚合/路由重启断连（routerSetAggregate 同步置 claude=true + 启动判断含 aggregate + 解锁后补拉路由）；P2 主密码锁定态 createTray 中断 whenReady（try/catch 兜底）；P3 nativeTheme 锁定态未捕获异常（try/catch）；P4 损坏 providers.json 静默重置（改名隔离 .corrupt-*）；P5 渲染层 CSP（构建期 meta 注入，dev 跳过）；P6 codex MCP 写入 CRLF→LF（保留原 EOL）；P7 解除主密码顺序（先明文库后删 master.json，saveStorePlain 走同一写队列）；P8 master.json 原子写；P9 provider:delete 验参；P10 provider:test 入参校验；P11 冷启动深链竞态（deeplink:take 5 分钟 TTL 兜底） |
+| 新功能（v0.8.7） | ✅ **路由熔断器**：连续 3 次失败（连接错误/5xx/429）冷却 5 分钟，故障转移跳过冷却中的家；全部冷却时 fail-open 保留原链；resetBreakerForTest 供自测 |
 | GitHub 仓库 | ✅ `a1531307144-cell/cc-switch-local`（公开） |
 
-**对标 cc-switch 仍未做的**：余额查询扩面（需核实文档）、主进程报错双语化、更多工具（与「保持两个做精」拍板冲突）。
+**对标 cc-switch 仍未做的**：余额查询扩面（需核实文档）、主进程报错双语化、更多工具（与「保持两个做精」拍板冲突）；进行中：Agent 版本管理 v1、余额上卡面、会话阅读器增强（搜索/导出/resume）→ v0.8.8。
 
 ## 3. 技术栈与架构
 

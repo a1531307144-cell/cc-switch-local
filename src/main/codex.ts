@@ -325,6 +325,8 @@ export async function saveMcpCodex(spec: McpSpec): Promise<void> {
   await fsp.mkdir(codexDir(), { recursive: true })
   await backupFile(codexDir(), 'config.toml')
   const original = fs.existsSync(codexConfigPath()) ? await fsp.readFile(codexConfigPath(), 'utf8') : ''
+  // 保留原文件的换行风格：CRLF 文件不应被整体转成 LF（v0.8.7 审查修复 #6）
+  const eol = original.includes('\r\n') ? '\r\n' : '\n'
   let lines = original.length ? original.split(/\r?\n/) : []
   if (lines.length && lines[lines.length - 1] === '') lines.pop()
   const HEADER = `[mcp_servers.${spec.name}]`
@@ -337,7 +339,7 @@ export async function saveMcpCodex(spec: McpSpec): Promise<void> {
     const envPairs = Object.entries(spec.env).map(([k, v]) => `${tomlStr(k)} = ${tomlStr(v)}`)
     lines.push(`env = { ${envPairs.join(', ')} }`)
   }
-  const nextText = lines.join('\n') + '\n'
+  const nextText = lines.join(eol) + (lines.length ? eol : '')
   try {
     TOML.parse(nextText)
   } catch (e) {
@@ -350,9 +352,10 @@ export async function deleteMcpCodex(name: string): Promise<void> {
   if (!fs.existsSync(codexConfigPath())) return
   await backupFile(codexDir(), 'config.toml')
   const original = await fsp.readFile(codexConfigPath(), 'utf8')
+  const eol = original.includes('\r\n') ? '\r\n' : '\n'
   const lines = original.length ? original.split(/\r?\n/) : []
   const next = removeSection(lines, `[mcp_servers.${name}]`)
-  const nextText = next.join('\n') + (next.length ? '\n' : '')
+  const nextText = next.join(eol) + (next.length ? eol : '')
   try {
     TOML.parse(nextText)
   } catch (e) {

@@ -119,6 +119,38 @@ export default function App() {
   }, [refresh, notify])
 
   // 更新事件（启动静默检查发现新版 / 下载进度 / 下载完成）+ 托盘侧数据变更 + 深链
+  const applyDeeplink = useCallback(
+    (r: DeeplinkResult) => {
+      if (r.ok && r.input) {
+        setDraft({
+          ...emptyDraft(r.input.tool),
+          name: r.input.name,
+          baseUrl: r.input.baseUrl,
+          apiKey: '',
+          keyType: r.input.keyType ?? 'auth_token',
+          protocol: 'anthropic',
+          model: r.input.model ?? '',
+          wireApi: r.input.wireApi ?? 'responses',
+          notes: t(lang, 'form.deeplinkNote')
+        })
+        notify(t(lang, 'deeplink.okToast', { name: r.input.name }))
+      } else {
+        notify(t(lang, 'deeplink.errToast', { msg: r.error ?? '' }), 'err')
+      }
+    },
+    [lang, notify]
+  )
+
+  // 冷启动兜底：主进程在 did-finish-load 推送时渲染层可能尚未注册监听，挂载后主动拉一次（v0.8.7）
+  useEffect(() => {
+    window.api
+      .deeplinkTake()
+      .then((r) => {
+        if (r) applyDeeplink(r)
+      })
+      .catch(() => {})
+  }, [applyDeeplink])
+
   useEffect(() => {
     const un1 = window.api.onUpdateAvailable((p) => {
       setUpdateVersion(p.version)
@@ -133,26 +165,7 @@ export default function App() {
     const un4 = window.api.onStoreChanged(() => {
       void refresh()
     })
-    const un5 = window.api.onDeeplinkProvider((r: DeeplinkResult) => {
-      if (r.ok && r.input) {
-        setDraft({
-          ...emptyDraft(r.input.tool),
-          name: r.input.name,
-          baseUrl: r.input.baseUrl,
-          apiKey: '',
-          keyType: r.input.keyType ?? 'auth_token',
-          protocol: 'anthropic',
-          model: r.input.model ?? '',
-          wireApi: r.input.wireApi ?? 'responses',
-          notes: t(store?.settings.language === 'en' ? 'en' : 'zh', 'form.deeplinkNote')
-        })
-        notify(
-          t(store?.settings.language === 'en' ? 'en' : 'zh', 'deeplink.okToast', { name: r.input.name })
-        )
-      } else {
-        notify(t(store?.settings.language === 'en' ? 'en' : 'zh', 'deeplink.errToast', { msg: r.error ?? '' }), 'err')
-      }
-    })
+    const un5 = window.api.onDeeplinkProvider(applyDeeplink)
     return () => {
       un1()
       un2()
@@ -160,7 +173,7 @@ export default function App() {
       un4()
       un5()
     }
-  }, [refresh, store?.settings.language])
+  }, [refresh, applyDeeplink])
 
   const runCheck = useCallback(async () => {
     setUpdateState('checking')

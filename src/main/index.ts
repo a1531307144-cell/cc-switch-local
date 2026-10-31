@@ -99,9 +99,14 @@ function createWindow(theme: ThemeMode = 'system'): void {
 // 关窗 = 驻留托盘；只有托盘菜单「退出」或系统关机才真正退出
 let quitting = false
 
+/** 最近一条深链（冷启动竞态兜底：did-finish-load 时渲染层可能还没注册监听，靠渲染层主动拉取补投） */
+let pendingDeeplink: { parsed: ReturnType<typeof parseProviderDeeplink>; at: number } | null = null
+const DEEPLINK_TTL_MS = 5 * 60_000
+
 /** 把深链发给渲染层（窗口未就绪时等加载完成再发一次） */
 function deliverDeeplink(raw: string): void {
   const parsed = parseProviderDeeplink(raw)
+  if (parsed.ok) pendingDeeplink = { parsed, at: Date.now() }
   const send = () => win?.webContents.send('deeplink:provider', parsed)
   if (win) {
     if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
@@ -124,6 +129,18 @@ function showMainWindow(): void {
   if (win.isMinimized()) win.restore()
   win.show()
   win.focus()
+}
+
+/** 上次会话开启过路由/聚合 → 拉起代理（配置文件仍指向本机路由）。锁定态下 loadStore 抛错属正常，静默 */
+function autoStartRouterIfNeeded(): void {
+  try {
+    const rs = loadStore().settings.router
+    if (rs?.claude || rs?.codex || rs?.aggregate) {
+      startRouter().catch((e) => console.error('[router] 启动失败:', e))
+    }
+  } catch {
+    /* 锁定态：解锁后由 master:unlock 再拉一次 */
+  }
 }
 
 function applySettings(settings: AppSettings): void {
@@ -186,6 +203,8 @@ function registerIpc(): void {
     const ok = unlockMaster(pass)
     if (!ok) throw new Error('主密码错误')
     refreshTray()
+    // 锁定态下 whenReady 的路由自动拉起被跳过：解锁后补一次（v0.8.7 审查修复 #2）
+    void autoStartRouterIfNeeded()
     return true
   })
 
@@ -251,6 +270,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('provider:delete', async (_e, id: string) => {
+    if (typeof id !== 'string' || !id || id.length > 64) throw new Error('非法的 id')
     const store = loadStore()
     store.providers = store.providers.filter((p) => p.id !== id)
     for (const t of ['claude', 'codex'] as ToolId[]) {
@@ -308,7 +328,23 @@ function registerIpc(): void {
     return tool === 'claude' ? claude.restoreBackup(file) : codex.restoreBackup(file)
   })
 
-  ipcMain.handle('provider:test', (_e, input: TestInput) => testProvider(input))
+  /** 连接测试入参校验（v0.8.7 审查修复 #10）：与其余 IPC 一致，不信任渲染层 */
+  function validateTestInput(input: TestInput): void {
+    if (!input || typeof input !== 'object') throw new Error('非法的测试参数')
+    if (!TOOL_IDS.includes(input.tool)) throw new Error('非法的工具类型')
+    if (!isStr(input.baseUrl) || !/^https?:\/\//i.test(input.baseUrl) || input.baseUrl.length > 2000) {
+      throw new Error('Base URL 非法（仅允许 http/https，长度 ≤ 2000）')
+    }
+    if (!isStr(input.apiKey) || input.apiKey.length > 4000) throw new Error('API Key 非法（长度 ≤ 4000）')
+    if (input.keyType !== undefined && !KEY_TYPES.includes(input.keyType)) throw new Error('非法的 Key 类型')
+    if (input.protocol !== undefined && !PROTOCOLS.includes(input.protocol)) throw new Error('非法的接口协议')
+    if (input.model !== undefined && (!isStr(input.model) || input.model.length > 200)) throw new Error('模型名过长')
+  }
+
+  ipcMain.handle('provider:test', (_e, input: TestInput) => {
+    validateTestInput(input)
+    return testProvider(input)
+  })
 
   ipcMain.handle('ccswitch:import', () => importFromCcSwitch())
 
@@ -367,6 +403,14 @@ function registerIpc(): void {
     return parseProviderDeeplink(raw)
   })
 
+  // 渲染层挂载时主动拉取一次：推送与监听注册之间存在竞态（v0.8.7 审查修复 #11）
+  ipcMain.handle('deeplink:take', () => {
+    const p = pendingDeeplink
+    pendingDeeplink = null
+    if (p && Date.now() - p.at <= DEEPLINK_TTL_MS) return p.parsed
+    return null
+  })
+
   ipcMain.handle('router:set', async (_e, tool: ToolId, enabled: boolean) => {
     assertTool(tool)
     if (typeof enabled !== 'boolean') throw new Error('非法的开关值')
@@ -417,6 +461,9 @@ function registerIpc(): void {
       ...(store.settings.router?.aggregate !== undefined ? { aggregate: store.settings.router.aggregate } : {})
     }
     router.aggregate = enabled
+    // 聚合依赖本机路由：开启时同步打开 claude 路由开关，否则重启后路由不会自动拉起、
+    // 而配置文件已指向本机路由 → Claude Code 断连（v0.8.7 审查修复 #1）
+    if (enabled) router.claude = true
     store.settings.router = router
     await saveStore(store)
     // 开启聚合：配置指向本机路由（当前供应商继续作为无前缀请求的兜底）；关闭：按当前状态重写
@@ -508,18 +555,16 @@ if (!gotLock) {
     const coldLink = findDeeplinkInArgv(process.argv)
     if (coldLink) deliverDeeplink(coldLink)
     createTray(showMainWindow)
-    // 上次会话开启了路由模式 → 直接拉起代理（配置文件仍指向本机路由）
-    try {
-      const rs = loadStore().settings.router
-      if (rs?.claude || rs?.codex) {
-        startRouter().catch((e) => console.error('[router] 启动失败:', e))
-      }
-    } catch {
-      /* 锁定态：解锁后用户操作时再拉起 */
-    }
+    // 上次会话开启了路由模式 → 直接拉起代理（配置文件仍指向本机路由；含聚合模式，v0.8.7 审查修复 #1）
+    autoStartRouterIfNeeded()
     void startupCheck(store.settings.autoUpdate)
     nativeTheme.on('updated', () => {
-      if (loadStore().settings.theme === 'system') syncTitleBar('system')
+      // 锁定态下 loadStore 抛 LOCKED 会变成主进程未捕获异常对话框（v0.8.7 审查修复 #3）
+      try {
+        if (loadStore().settings.theme === 'system') syncTitleBar('system')
+      } catch {
+        /* 锁定态或读失败：跳过本次主题栏同步 */
+      }
     })
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
