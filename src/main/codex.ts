@@ -4,11 +4,10 @@ import fsp from 'node:fs/promises'
 import TOML from '@iarna/toml'
 import { atomicWrite } from './store'
 import { routerPort } from './router'
-import { homeDir, maskKey, stamp } from './claude'
+import { backupFile, homeDir, maskKey } from './claude'
 import type { BackupInfo, Provider, SwitchResult, ToolStatus } from '../shared/types'
 
 const SECTION = 'ccsl'
-const MAX_BACKUPS = 10
 
 export function codexDir(): string {
   return path.join(homeDir(), '.codex')
@@ -20,25 +19,6 @@ export function codexConfigPath(): string {
 
 export function codexAuthPath(): string {
   return path.join(codexDir(), 'auth.json')
-}
-
-async function backupFile(dir: string, name: string): Promise<string | null> {
-  const full = path.join(dir, name)
-  if (!fs.existsSync(full)) return null
-  let bak = path.join(dir, `${name}.bak-${stamp()}`)
-  let i = 1
-  while (fs.existsSync(bak)) {
-    bak = path.join(dir, `${name}.bak-${stamp()}-${i}`)
-    i += 1
-  }
-  await fsp.copyFile(full, bak)
-  const entries = await fsp.readdir(dir)
-  const prefix = `${name}.bak-`
-  const baks = entries.filter((f) => f.startsWith(prefix)).sort()
-  for (const f of baks.slice(0, Math.max(0, baks.length - MAX_BACKUPS))) {
-    await fsp.rm(path.join(dir, f), { force: true })
-  }
-  return bak
 }
 
 /** TOML 基本字符串转义 */
@@ -303,4 +283,80 @@ export async function restoreBackup(file: string): Promise<SwitchResult> {
   const backup = await backupFile(codexDir(), target)
   await fsp.writeFile(path.join(codexDir(), target), content)
   return { ok: true, files: [path.join(codexDir(), target)], backup: backup ?? undefined }
+}
+
+// ─── MCP 服务器（config.toml 的 [mcp_servers.NAME] 段，v0.8.5） ───
+
+interface McpSpec {
+  name: string
+  command: string
+  args: string[]
+  env: Record<string, string>
+}
+
+export async function listMcpCodex(): Promise<McpSpec[]> {
+  let cfg: Record<string, unknown> = {}
+  try {
+    cfg = TOML.parse(await fsp.readFile(codexConfigPath(), 'utf8')) as Record<string, unknown>
+  } catch {
+    return []
+  }
+  const servers = cfg.mcp_servers
+  if (!servers || typeof servers !== 'object') return []
+  const out: McpSpec[] = []
+  for (const [name, v] of Object.entries(servers as Record<string, unknown>)) {
+    if (!v || typeof v !== 'object') continue
+    const o = v as Record<string, unknown>
+    out.push({
+      name,
+      command: typeof o.command === 'string' ? o.command : '',
+      args: Array.isArray(o.args) ? o.args.filter((a): a is string => typeof a === 'string') : [],
+      env: Object.fromEntries(
+        Object.entries((o.env ?? {}) as Record<string, unknown>)
+          .filter(([, ev]) => typeof ev === 'string')
+          .map(([k, ev]) => [k, ev as string])
+      )
+    })
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function saveMcpCodex(spec: McpSpec): Promise<void> {
+  await fsp.mkdir(codexDir(), { recursive: true })
+  await backupFile(codexDir(), 'config.toml')
+  const original = fs.existsSync(codexConfigPath()) ? await fsp.readFile(codexConfigPath(), 'utf8') : ''
+  let lines = original.length ? original.split(/\r?\n/) : []
+  if (lines.length && lines[lines.length - 1] === '') lines.pop()
+  const HEADER = `[mcp_servers.${spec.name}]`
+  lines = removeSection(lines, HEADER)
+  if (lines.length && lines[lines.length - 1].trim() !== '') lines.push('')
+  lines.push(HEADER)
+  lines.push(`command = ${tomlStr(spec.command)}`)
+  if (spec.args.length) lines.push(`args = [${spec.args.map(tomlStr).join(', ')}]`)
+  if (Object.keys(spec.env).length) {
+    const envPairs = Object.entries(spec.env).map(([k, v]) => `${tomlStr(k)} = ${tomlStr(v)}`)
+    lines.push(`env = { ${envPairs.join(', ')} }`)
+  }
+  const nextText = lines.join('\n') + '\n'
+  try {
+    TOML.parse(nextText)
+  } catch (e) {
+    throw new Error(`写入校验失败（已中止，不会写入）：${(e as Error).message}`)
+  }
+  await atomicWrite(codexConfigPath(), nextText)
+}
+
+export async function deleteMcpCodex(name: string): Promise<void> {
+  if (!fs.existsSync(codexConfigPath())) return
+  await backupFile(codexDir(), 'config.toml')
+  const original = await fsp.readFile(codexConfigPath(), 'utf8')
+  const lines = original.length ? original.split(/\r?\n/) : []
+  const next = removeSection(lines, `[mcp_servers.${name}]`)
+  const nextText = next.join('\n') + (next.length ? '\n' : '')
+  try {
+    TOML.parse(nextText)
+  } catch (e) {
+    throw new Error(`写入校验失败（已中止，不会写入）：${(e as Error).message}`)
+  }
+  await atomicWrite(codexConfigPath(), nextText)
 }

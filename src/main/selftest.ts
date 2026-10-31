@@ -1,7 +1,8 @@
 import fsp from 'node:fs/promises'
+import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
-import { loadStore, newId, saveStore, storeFile } from './store'
+import { loadStore, newId, saveStore, storeFile, setMasterPassword, unlockMaster, clearMasterPassword, lockForTest } from './store'
 import * as claude from './claude'
 import * as codex from './codex'
 import { importFromCcSwitch } from './importer'
@@ -15,6 +16,8 @@ import { switchProviderForTool } from './switcher'
 import { routerPort, routerStatus, startRouter, stopRouter } from './router'
 import { detectVendor } from '../shared/vendors'
 import { aggregateAliasOf, resolveAggregatePrefix } from '../shared/aggregate'
+import { listSessions, readSession } from './sessions'
+import { mcpDelete, mcpList, mcpSave } from './mcp'
 import http from 'node:http'
 
 interface Check {
@@ -316,6 +319,7 @@ export async function runSelfTest(): Promise<void> {
           message: {
             id: 'msg_1',
             model: 'claude-sonnet-4-5',
+            content: [{ type: 'text', text: '好的，我来处理。' }],
             usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 200, cache_creation_input_tokens: 10 }
           }
         }),
@@ -325,6 +329,7 @@ export async function runSelfTest(): Promise<void> {
           message: {
             id: 'msg_1',
             model: 'claude-sonnet-4-5',
+            content: [{ type: 'text', text: '好的，我来处理。' }],
             usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 200, cache_creation_input_tokens: 10 }
           }
         }),
@@ -334,6 +339,7 @@ export async function runSelfTest(): Promise<void> {
           message: {
             id: 'msg_2',
             model: 'claude-opus-4-6',
+            content: [{ type: 'text', text: '第二条回复。' }],
             usage: { input_tokens: 20, output_tokens: 80, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
           }
         }),
@@ -346,6 +352,7 @@ export async function runSelfTest(): Promise<void> {
       await fsp.mkdir(sdir, { recursive: true })
       const codexLines = [
         JSON.stringify({ timestamp: '2026-10-29T09:00:00Z', type: 'turn_context', payload: { model: 'gpt-5.1-codex' } }),
+        JSON.stringify({ timestamp: '2026-10-29T09:00:01Z', type: 'event_msg', payload: { type: 'user_message', message: '帮我修个 bug' } }),
         JSON.stringify({
           timestamp: '2026-10-29T09:00:05Z',
           type: 'event_msg',
@@ -357,6 +364,7 @@ export async function runSelfTest(): Promise<void> {
             }
           }
         }),
+        JSON.stringify({ timestamp: '2026-10-29T09:01:00Z', type: 'event_msg', payload: { type: 'agent_message', message: '已修复，测试通过。' } }),
         JSON.stringify({
           timestamp: '2026-10-29T09:02:00Z',
           type: 'event_msg',
@@ -1098,7 +1106,122 @@ export async function runSelfTest(): Promise<void> {
       assert(!bad5.ok, '超长 url 必须拒绝')
     })
 
+    await step('会话阅读器：列出/读取会话 + 路径穿越拒绝', async () => {
+      const list = await listSessions('claude')
+      assert(list.some((s) => s.file.includes('session-1.jsonl')), '用量夹具的 session-1.jsonl 应被列出')
+      const target = list.find((s) => s.file.includes('session-1.jsonl'))
+      assert(!!target, '目标会话应存在')
+      const page = await readSession('claude', target!.file)
+      const user = page.entries.find((e) => e.role === 'user')
+      assert(!!user && user.text.includes('hi'), `user 文本应被解析，实际 ${JSON.stringify(page.entries.slice(0, 2))}`)
+      const asst = page.entries.find((e) => e.role === 'assistant')
+      assert(!!asst, 'assistant 文本应被解析')
+      // Codex 会话
+      const cx = await listSessions('codex')
+      const cxTarget = cx.find((s) => s.file.includes('rollout-test.jsonl'))
+      assert(!!cxTarget, 'codex 会话应被列出')
+      const cxPage = await readSession('codex', cxTarget!.file)
+      assert(cxPage.entries.length >= 2, `codex 消息应被解析，实际 ${cxPage.entries.length}`)
+      // 路径穿越拒绝
+      let rejected = false
+      try {
+        await readSession('claude', path.join(home, '.claude', 'settings.json'))
+      } catch {
+        rejected = true
+      }
+      assert(rejected, '会话根目录之外的文件必须拒绝')
+      let rejected2 = false
+      try {
+        await readSession('claude', path.join(home, '.claude', 'projects', 'proj-x', '..', '..', '..', 'settings.json'))
+      } catch {
+        rejected2 = true
+      }
+      assert(rejected2, '带 .. 的路径必须拒绝')
+    })
+
+    await step('MCP 管理：claude.json 手术编辑 + codex TOML 段 + 删除 + 非法名拒绝', async () => {
+      // claude：预置一个带其它键的 ~/.claude.json，验证手术式只改 mcpServers
+      const claudeJson = path.join(home, '.claude.json')
+      await fsp.writeFile(claudeJson, JSON.stringify({ existing: 'keep', mcpServers: {} }), 'utf8')
+      await mcpSave('claude', { name: 'fetch', command: 'npx', args: ['-y', 'mcp-server-fetch'], env: { TOKEN: 'abc' } })
+      const after = JSON.parse(await fsp.readFile(claudeJson, 'utf8')) as Record<string, unknown>
+      assert(after.existing === 'keep', 'claude.json 其它键必须保留')
+      const serversC = (after.mcpServers as Record<string, Record<string, unknown>>).fetch
+      const envC = serversC.env as Record<string, string> | undefined
+      assert(
+        serversC.command === 'npx' &&
+          JSON.stringify(serversC.args) === JSON.stringify(['-y', 'mcp-server-fetch']) &&
+          !!envC &&
+          envC.TOKEN === 'abc',
+        'claude MCP 字段应写入'
+      )
+      const listC = await mcpList('claude')
+      assert(listC.servers.some((s) => s.name === 'fetch'), 'claude MCP 列表应含 fetch')
+      // codex：TOML 段
+      await mcpSave('codex', { name: 'fetch', command: 'uvx', args: ['mcp-server-fetch'], env: {} })
+      const tomlText = await fsp.readFile(path.join(home, '.codex', 'config.toml'), 'utf8')
+      assert(tomlText.includes('[mcp_servers.fetch]'), 'codex MCP 段应写入')
+      assert(tomlText.includes('[profile.fast]'), 'codex 用户段必须保留')
+      const listX = await mcpList('codex')
+      assert(listX.servers[0]?.command === 'uvx', `codex MCP 列表应读回，实际 ${JSON.stringify(listX.servers)}`)
+      // 覆盖保存 + 删除
+      await mcpSave('codex', { name: 'fetch', command: 'node', args: [], env: {} })
+      const listX2 = await mcpList('codex')
+      assert(listX2.servers.length === 1 && listX2.servers[0].command === 'node', '覆盖保存应替换而非重复')
+      await mcpDelete('claude', 'fetch')
+      await mcpDelete('codex', 'fetch')
+      assert((await mcpList('claude')).servers.length === 0, 'claude 删除后应为空')
+      assert((await mcpList('codex')).servers.length === 0, 'codex 删除后应为空')
+      // 非法名拒绝
+      let rejected = false
+      try {
+        await mcpSave('claude', { name: 'bad name;x', command: 'npx', args: [], env: {} })
+      } catch {
+        rejected = true
+      }
+      assert(rejected, '非法 MCP 名称必须拒绝')
+    })
+
+    await step('主密码加密：整文件加密/锁定/解锁/解除', async () => {
+      const s = loadStore()
+      assert(s.providers.length > 0, '加密前库应有数据')
+      await setMasterPassword('selftest-master-123')
+      const raw = await fsp.readFile(storeFile(), 'utf8')
+      assert(!raw.includes('sk-test-a-1234567890abcd'), '加密文件不得含明文 Key')
+      assert(!raw.trimStart().startsWith('{'), '加密文件不应是明文 JSON')
+      // 模拟重启（清内存密钥）→ 锁定
+      lockForTest()
+      let locked = false
+      try {
+        loadStore()
+      } catch (e) {
+        locked = (e as Error).message === 'LOCKED'
+      }
+      assert(locked, '解锁前 loadStore 应抛 LOCKED')
+      assert(unlockMaster('wrong-pass-9999') === false, '错误口令应解锁失败')
+      assert(unlockMaster('selftest-master-123') === true, '正确口令应解锁成功')
+      const s2 = loadStore()
+      assert(s2.providers.length === s.providers.length, '解锁后数据应完整')
+      assert(s2.providers.some((p) => p.apiKey === 'sk-test-a-1234567890abcd'), '解锁后 Key 应可用')
+      // 解除加密
+      let wrongClear = false
+      try {
+        await clearMasterPassword('wrong-pass-9999')
+      } catch {
+        wrongClear = true
+      }
+      assert(wrongClear, '解除时错误口令应失败')
+      await clearMasterPassword('selftest-master-123')
+      const raw2 = await fsp.readFile(storeFile(), 'utf8')
+      assert(raw2.trimStart().startsWith('{'), '解除后应恢复明文 JSON')
+      assert(raw2.includes('sk-test-a-1234567890abcd'), '解除后明文 Key 应回来')
+    })
+
     await step('一键清空：数据文件被删、库回到空态（配置恢复在各自步骤已覆盖）', async () => {
+      // 诊断：记录清空前的现场（主密码步骤应已恢复明文且删除 master.json）
+      const diagHead = (await fsp.readFile(storeFile(), 'utf8').catch(() => '(no file)')).slice(0, 20)
+      const diagMaster = fs.existsSync(path.join(path.dirname(storeFile()), 'master.json'))
+      assert(!diagMaster, `清空前 master.json 应已删除（库文件头：${diagHead}）`)
       const s = loadStore()
       assert(s.providers.length > 0, '清空前库应有数据')
       const r = await clearAppData()

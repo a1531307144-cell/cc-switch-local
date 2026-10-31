@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Api, AppSettings, DeeplinkResult, ProviderInput, TestInput, ToolId } from '../shared/types'
+import type { Api, AppSettings, DeeplinkResult, McpServerSpec, ProviderInput, TestInput, ToolId } from '../shared/types'
 
 const api: Api = {
   storeGet: () => ipcRenderer.invoke('store:get'),
@@ -18,6 +18,15 @@ const api: Api = {
   backupExport: (passphrase: string) => ipcRenderer.invoke('backup:export', passphrase),
   backupImport: (passphrase: string) => ipcRenderer.invoke('backup:import', passphrase),
   usageGet: () => ipcRenderer.invoke('usage:get'),
+  sessionsList: (tool: ToolId) => ipcRenderer.invoke('sessions:list', tool),
+  sessionsRead: (tool: ToolId, file: string) => ipcRenderer.invoke('sessions:read', tool, file),
+  mcpList: (tool: ToolId) => ipcRenderer.invoke('mcp:list', tool),
+  mcpSave: (tool: ToolId, spec: McpServerSpec) => ipcRenderer.invoke('mcp:save', tool, spec),
+  mcpDelete: (tool: ToolId, name: string) => ipcRenderer.invoke('mcp:delete', tool, name),
+  storeUnlock: (passphrase: string) => ipcRenderer.invoke('master:unlock', passphrase),
+  masterSet: (passphrase: string) => ipcRenderer.invoke('master:set', passphrase),
+  masterRemove: (passphrase: string) => ipcRenderer.invoke('master:remove', passphrase),
+  masterStatus: () => ipcRenderer.invoke('master:status'),
   routerStatus: () => ipcRenderer.invoke('router:status'),
   routerSet: (tool: ToolId, enabled: boolean) => ipcRenderer.invoke('router:set', tool, enabled),
   routerSetAggregate: (tool: ToolId, enabled: boolean) => ipcRenderer.invoke('router:setAggregate', tool, enabled),

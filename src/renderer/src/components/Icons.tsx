@@ -55,3 +55,31 @@ export function IconSearch() {
     </svg>
   )
 }
+
+export function IconBook() {
+  return (
+    <svg {...base}>
+      <path d="M2.5 3.5c2-1 4-1 5.5 0v9c-1.5-1-3.5-1-5.5 0v-9Z" />
+      <path d="M8 3.5c1.5-1 3.5-1 5.5 0v9c-2-1-4-1-5.5 0" />
+    </svg>
+  )
+}
+
+export function IconPlug() {
+  return (
+    <svg {...base}>
+      <path d="M5.5 2.5v3M10.5 2.5v3" />
+      <path d="M3.5 5.5h9v2a4.5 4.5 0 0 1-9 0v-2Z" />
+      <path d="M8 12v1.8" />
+    </svg>
+  )
+}
+
+export function IconLock() {
+  return (
+    <svg {...base}>
+      <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+    </svg>
+  )
+}

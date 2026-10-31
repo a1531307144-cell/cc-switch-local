@@ -7,11 +7,59 @@ import { aggregateEntries } from '../../shared/aggregate'
 import ProviderCard from './components/ProviderCard'
 import ProviderForm, { emptyDraft, type FormDraft } from './components/ProviderForm'
 import SettingsPanel from './components/SettingsPanel'
+import SessionsView from './components/SessionsView'
+import McpView from './components/McpView'
 import UsageDashboard from './components/UsageDashboard'
-import { IconChart, IconChevronLeft, IconChevronRight, IconGear, IconSearch } from './components/Icons'
+import { IconBook, IconChart, IconChevronLeft, IconChevronRight, IconGear, IconLock, IconPlug, IconSearch } from './components/Icons'
 import logoUrl from './assets/logo.png'
 
-type View = ToolId | 'usage' | 'settings'
+type View = ToolId | 'usage' | 'settings' | 'sessions' | 'mcp'
+
+/** 主密码解锁屏（锁定态下渲染层只显示这个） */
+function UnlockScreen({ lang, onUnlocked }: { lang: Lang; onUnlocked: () => void }) {
+  const [pass, setPass] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const submit = async (): Promise<void> => {
+    if (!pass || busy) return
+    setBusy(true)
+    setErr('')
+    try {
+      await window.api.storeUnlock(pass)
+      onUnlocked()
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="unlock-screen">
+      <div className="unlock-card">
+        <div className="unlock-icon">
+          <IconLock />
+        </div>
+        <h2>{t(lang, 'lock.title')}</h2>
+        <p className="muted small">{t(lang, 'lock.desc')}</p>
+        <input
+          type="password"
+          value={pass}
+          onChange={(e) => setPass(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void submit()
+          }}
+          placeholder={t(lang, 'lock.ph')}
+          autoFocus
+        />
+        {err && <div className="form-error">{err}</div>}
+        <button type="button" className="btn primary" onClick={() => void submit()} disabled={busy || !pass}>
+          {busy ? t(lang, 'lock.unlocking') : t(lang, 'lock.unlock')}
+        </button>
+        <p className="muted small">{t(lang, 'lock.hint')}</p>
+      </div>
+    </div>
+  )
+}
 
 const TOOLS: { id: ToolId; label: string }[] = [
   { id: 'claude', label: 'Claude Code' },
@@ -166,6 +214,19 @@ export default function App() {
   }, [theme])
 
   if (!store) return <div className="loading">{tr('app.loading')}</div>
+  if (store.locked) {
+    return (
+      <>
+        <div className="titlebar">
+          <img src={logoUrl} alt="" draggable={false} />
+          <span className="titlebar-title">CC Switch Local</span>
+        </div>
+        <div className="app">
+          <UnlockScreen lang={lang} onUnlocked={() => void refresh()} />
+        </div>
+      </>
+    )
+  }
 
   const toolView = view === 'claude' || view === 'codex'
   const activeTool = toolView ? (view as ToolId) : 'claude'
@@ -396,6 +457,24 @@ export default function App() {
             </button>
           ))}
           <div className="nav-divider" />
+          <button
+            type="button"
+            className={`nav icon${view === 'sessions' ? ' active' : ''}`}
+            onClick={() => setView('sessions')}
+            title={collapsed ? tr('side.sessions') : undefined}
+          >
+            <IconBook />
+            {!collapsed && <span>{tr('side.sessions')}</span>}
+          </button>
+          <button
+            type="button"
+            className={`nav icon${view === 'mcp' ? ' active' : ''}`}
+            onClick={() => setView('mcp')}
+            title={collapsed ? tr('side.mcp') : undefined}
+          >
+            <IconPlug />
+            {!collapsed && <span>{tr('side.mcp')}</span>}
+          </button>
           <button
             type="button"
             className={`nav icon${view === 'usage' ? ' active' : ''}`}
@@ -643,6 +722,8 @@ export default function App() {
               )}
             </>
           )}
+          {view === 'sessions' && <SessionsView lang={lang} notify={notify} />}
+          {view === 'mcp' && <McpView lang={lang} notify={notify} />}
           {view === 'usage' && <UsageDashboard lang={lang} notify={notify} />}
           {view === 'settings' && (
             <SettingsPanel store={store} lang={lang} onChanged={refresh} notify={notify} onCheckUpdate={runCheck} updateChecking={updateState === 'checking'} />

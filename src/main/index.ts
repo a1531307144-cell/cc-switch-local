@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, ipcMain, nativeTheme, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
-import { dataDir, loadStore, newId, saveStore } from './store'
+import { dataDir, loadStore, masterState, newId, saveStore, setMasterPassword, clearMasterPassword, unlockMaster } from './store'
 import * as claude from './claude'
 import * as codex from './codex'
 import { testProvider } from './test'
@@ -11,6 +11,8 @@ import { usageStats } from './usage'
 import { routerStatus, startRouter, stopRouter } from './router'
 import { fetchBalance } from './balance'
 import { cloneProvider, reorderProviders, validateSettingsPatch } from './library'
+import { listSessions, readSession } from './sessions'
+import { mcpDelete, mcpList, mcpSave } from './mcp'
 import { clearAppData } from './cleardata'
 import { findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
 import { PRESETS } from './presets'
@@ -109,7 +111,14 @@ function deliverDeeplink(raw: string): void {
 
 function showMainWindow(): void {
   if (!win) {
-    createWindow(loadStore().settings.theme)
+    // 锁定态读不到主题：回退 system（解锁后渲染层会应用真实设置）
+    let theme: ThemeMode = 'system'
+    try {
+      theme = loadStore().settings.theme
+    } catch {
+      /* LOCKED 或读失败 */
+    }
+    createWindow(theme)
     return
   }
   if (win.isMinimized()) win.restore()
@@ -160,7 +169,39 @@ function validateProviderInput(input: ProviderInput): void {
 }
 
 function registerIpc(): void {
-  ipcMain.handle('store:get', () => loadStore())
+  ipcMain.handle('store:get', () => {
+    try {
+      return loadStore()
+    } catch (e) {
+      if ((e as Error).message === 'LOCKED') {
+        // 锁定态：返回带 locked 标记的空库，渲染层据此显示解锁屏
+        return { version: 1, current: { claude: null, codex: null }, providers: [], settings: { autoUpdate: true, autoStart: false, theme: 'system' }, locked: true }
+      }
+      throw e
+    }
+  })
+
+  ipcMain.handle('master:unlock', (_e, pass: string) => {
+    if (typeof pass !== 'string') throw new Error('非法的口令')
+    const ok = unlockMaster(pass)
+    if (!ok) throw new Error('主密码错误')
+    refreshTray()
+    return true
+  })
+
+  ipcMain.handle('master:set', (_e, pass: string) => {
+    setMasterPassword(pass)
+    refreshTray()
+    return true
+  })
+
+  ipcMain.handle('master:remove', (_e, pass: string) => {
+    clearMasterPassword(pass)
+    refreshTray()
+    return true
+  })
+
+  ipcMain.handle('master:status', () => masterState())
 
   ipcMain.handle('provider:save', async (_e, input: ProviderInput) => {
     validateProviderInput(input)
@@ -278,6 +319,23 @@ function registerIpc(): void {
   ipcMain.handle('backup:import', (_e, passphrase: string) => backupImport(passphrase))
 
   ipcMain.handle('usage:get', () => usageStats())
+
+  ipcMain.handle('sessions:list', (_e, tool: ToolId) => {
+    assertTool(tool)
+    return listSessions(tool)
+  })
+
+  ipcMain.handle('sessions:read', (_e, tool: ToolId, file: string) => {
+    assertTool(tool)
+    if (typeof file !== 'string' || file.length > 2000) throw new Error('非法的会话文件路径')
+    return readSession(tool, file)
+  })
+
+  ipcMain.handle('mcp:list', (_e, tool: ToolId) => mcpList(tool))
+
+  ipcMain.handle('mcp:save', (_e, tool: ToolId, spec) => mcpSave(tool, spec))
+
+  ipcMain.handle('mcp:delete', (_e, tool: ToolId, name: string) => mcpDelete(tool, name))
 
   ipcMain.handle('router:status', () => routerStatus())
 
@@ -437,7 +495,13 @@ if (!gotLock) {
         /* 注册失败不影响其他功能 */
       }
     }
-    const store = loadStore()
+    let store: ReturnType<typeof loadStore>
+    try {
+      store = loadStore()
+    } catch {
+      // 锁定态（主密码未解锁）或库损坏：用默认设置启动，渲染层显示解锁屏
+      store = { version: 1, current: { claude: null, codex: null }, providers: [], settings: { autoUpdate: true, autoStart: false, theme: 'system' } }
+    }
     applySettings(store.settings)
     createWindow(store.settings.theme)
     // 冷启动带深链（Windows 把链接作为 argv 传进来）
@@ -445,9 +509,13 @@ if (!gotLock) {
     if (coldLink) deliverDeeplink(coldLink)
     createTray(showMainWindow)
     // 上次会话开启了路由模式 → 直接拉起代理（配置文件仍指向本机路由）
-    const rs = loadStore().settings.router
-    if (rs?.claude || rs?.codex) {
-      startRouter().catch((e) => console.error('[router] 启动失败:', e))
+    try {
+      const rs = loadStore().settings.router
+      if (rs?.claude || rs?.codex) {
+        startRouter().catch((e) => console.error('[router] 启动失败:', e))
+      }
+    } catch {
+      /* 锁定态：解锁后用户操作时再拉起 */
     }
     void startupCheck(store.settings.autoUpdate)
     nativeTheme.on('updated', () => {

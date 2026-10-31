@@ -668,6 +668,182 @@ code {
   color: var(--muted);
 }
 
+/* ---------- 主密码解锁屏 ---------- */
+.unlock-screen {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.unlock-card {
+  width: 360px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  corner-shape: squircle;
+  box-shadow: var(--shadow-3);
+  padding: 28px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+
+.unlock-icon {
+  align-self: center;
+  color: var(--accent-ink);
+  transform: scale(1.8);
+  margin: 6px 0 2px;
+}
+
+.unlock-card h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.unlock-card input {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-s);
+  padding: 9px 12px;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+}
+
+.unlock-card input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ---------- 会话阅读器 ---------- */
+.sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+  min-height: 0;
+}
+
+.sessions-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+}
+
+.session-list {
+  width: 240px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.session-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: var(--r-s);
+  padding: 9px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text);
+}
+
+.session-item:hover {
+  border-color: var(--accent);
+}
+
+.session-item.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.session-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-page {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-l);
+  corner-shape: squircle;
+  background: var(--panel);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sess-entry {
+  border-radius: var(--r-s);
+  padding: 10px 14px;
+  max-width: 92%;
+}
+
+.sess-user {
+  align-self: flex-end;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.sess-assistant {
+  align-self: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.sess-tool {
+  align-self: flex-start;
+  background: var(--chip);
+  border: 1px solid var(--border);
+}
+
+.sess-role {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.sess-text {
+  margin: 0;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* MCP 表格辅助 */
+.badge-muted {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.danger-ghost {
+  color: var(--err-ink);
+}
+
+.danger-ghost:hover:not(:disabled) {
+  border-color: var(--err);
+  color: var(--err-ink);
+}
+
 /* ---------- 更新横幅 ---------- */
 .update-banner {
   display: flex;

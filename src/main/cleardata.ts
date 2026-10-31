@@ -11,7 +11,7 @@ import { dataDir } from './store'
  */
 export async function clearAppData(): Promise<{ removed: string[] }> {
   const dir = dataDir()
-  const targets = ['providers.json', 'usage-cache.json']
+  const targets = ['providers.json', 'usage-cache.json', 'master.json']
   const removed: string[] = []
   for (const name of targets) {
     const full = path.join(dir, name)

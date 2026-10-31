@@ -14,18 +14,18 @@
 - 用户的核心诉求是**安全性**：API Key 全部存本机、代码开源可审计、零遥测零上传。任何"把数据传出去"的功能都与项目定位冲突，不要加。
 - 对标 farion1231/cc-switch（v4.0.21 起为功能参照物）。2026-10-30 用户拍板「功能实现完全相似」为目标分多版走：v0.6.0 交付预设库 / 关键字段写入 / 用量统计 / 本机路由最简版 / 托盘 / 加密备份；**协议转换与聚合模式、MCP、多工具支持、云同步（决定不做，用加密备份文件替代）见 §9**。
 
-## 2. 当前状态（2026-10-31：v0.8.4 聚合模式版）
+## 2. 当前状态（2026-10-31：v0.8.5 全功能版）
 
 | 项 | 状态 |
 | --- | --- |
 | TypeScript 类型检查 | ✅ 通过 |
-| 端到端自测（34 步断言） | ✅ 34/34 通过（隔离目录 + 本地 mock 上游，未触碰真实配置） |
-| CDP 实机验证 | ✅ v0.8.4 复验 5/5：表单别名字段/聚合 pill 开关与高亮/tooltip 列别名模型/开启写路由配置/关闭恢复直连 |
+| 端到端自测（37 步断言） | ✅ 37/37 通过（隔离目录 + 本地 mock 上游，未触碰真实配置） |
+| CDP 实机验证 | ✅ v0.8.5 两段 10/10：会话阅读器解析链路、MCP 表单添加与 claude.json 手术式写入、主密码启用→密文落盘→重启解锁屏→错误密码拒绝→解锁→解除恢复明文 |
 | Windows 打包 | ✅ win-unpacked 实机验证通过，NSIS 由 CI 产出 |
-| 新功能（v0.8.4） | ✅ **聚合模式**：页头「聚合」开关（仅 claude 路由）；请求模型名前缀「别名/模型」分发（shared/aggregate.ts 别名推导+前缀解析），剥离前缀后按供应商协议透传/转换；无前缀走当前供应商；未知前缀 400 并列可用别名；前缀家故障走兜底链；`loadStore` 保留 router.aggregate；路由关闭在聚合开启时被守卫 |
+| 新功能（v0.8.5） | ✅ **主密码加密**（providers.json 整文件 AES-256-GCM，master.json 存 salt+verifier，锁定态 store:get 返回 locked 空库+渲染层解锁屏，saveStore 锁定拒写，cleardata 连 master.json 一起清）；**会话阅读器**（sessions.ts 列表+解析，路径穿越防护，Claude 全量/Codex MVP 文本）；**MCP 管理**（claude.json 顶层 mcpServers 手术编辑 + codex [mcp_servers.NAME] 段手术，mcp.ts 编排+主进程校验） |
 | GitHub 仓库 | ✅ `a1531307144-cell/cc-switch-local`（公开） |
 
-**对标 cc-switch 仍未做的**（见 §9 路线图）：路由协议转换、聚合模式、会话阅读器、MCP/Skills/提示词、多工具、主密码加密。
+**对标 cc-switch 仍未做的**：余额查询扩面（需核实文档）、主进程报错双语化、更多工具（与「保持两个做精」拍板冲突）。
 
 ## 3. 技术栈与架构
 
@@ -43,6 +43,9 @@ src/
     convert.ts           # 协议转换核心（v0.8.3）：Anthropic↔OpenAI 请求/响应/SSE 流式/count_tokens 估算
     switcher.ts          # 统一切换出口（v0.8.3）：IPC 与托盘共用；OpenAI 协议的 Claude 供应商自动开路由
     usage.ts             # 用量统计：扫描会话日志（Claude projects / Codex sessions），增量缓存按 mtime+size，成本按单价表估算
+    sessions.ts          # 会话阅读器（v0.8.5）：列出/解析会话日志为只读条目；file 参数必须位于会话根内（防穿越）
+    mcp.ts               # MCP 管理（v0.8.5）编排：入参校验后分别写 claude.json 顶层 mcpServers / codex [mcp_servers.NAME] 段
+    master（在 store.ts）# 主密码加密（v0.8.5）：master.json 存 salt+verifier，库整文件 AES-256-GCM；锁定态 loadStore 抛 LOCKED
     backup.ts            # 加密备份：AES-256-GCM（scrypt 派生），导出/导入 .ccslbak，Key 不出机
     tray.ts              # 系统托盘：快切菜单 + 关窗驻留（close→hide，before-quit 才真退）
     test.ts              # 连接测试（electron net.fetch，12s 超时，区分 ok/auth/http/network）
@@ -55,9 +58,9 @@ src/
     presets.ts           # 预设合并层：精选中文官方条目 + presets-data.ts（256 条生成数据，去重）
     presets-data.ts      # scripts/extract-presets.mjs 从 cc-switch（MIT）自动生成，勿手改
     updater.ts           # electron-updater（打包后启用，失败静默）
-    selftest.ts          # 端到端自测脚本（34 步）
+    selftest.ts          # 端到端自测脚本（37 步）
   preload/index.ts       # contextBridge 暴露 window.api（类型 = shared.Api）
-  renderer/              # React UI：App + ProviderCard（v0.8.0 图标优先网格卡片，可拖拽）/ ProviderForm / SettingsPanel / UsageDashboard / Icons（内联 SVG）/ ui（VendorChip/VendorLogo/Modal/Dropdown）
+  renderer/              # React UI：App + ProviderCard（v0.8.0 图标优先网格卡片，可拖拽）/ ProviderForm / SettingsPanel / UsageDashboard / SessionsView（v0.8.5 会话阅读器）/ McpView（v0.8.5 MCP 管理）/ Icons / ui（VendorChip/VendorLogo/Modal/Dropdown）
   shared/aggregate.ts    # 聚合别名推导与前缀解析（主进程路由与渲染层 tooltip 共用）
 ```
 
@@ -216,13 +219,13 @@ model_reasoning_effort = "low"
 目标：功能实现上与 cc-switch v4.0.21 完全相似（分多版），设计延续现有 LexBench 风格。
 
 1. ~~路由协议转换~~ ✅（v0.8.3：Anthropic↔OpenAI 双向含 SSE 流式与工具调用；count_tokens 本地估算；默认端口改 15731 避开原版 cc-switch 冲突）。
-2. ~~聚合模式~~ ✅（v0.8.4：模型名前缀「别名/模型」分发；无前缀走当前供应商；未知前缀 400；前缀家故障走兜底链。后续增强：Codex/Responses 侧聚合、模型列表拉取）——**下一版首选：会话阅读器或 MCP 管理（二选一）**。
-3. 会话阅读器：解析会话 JSONL 成阅读页；用量扫描已打好解析基础。
-4. MCP 管理 / Skills / 提示词（cc-switch 的统一面板 + 按工具同步）。
-5. 主密码加密存储 API Key（用户最痛安全需求，一直排着）。
-6. 更多工具支持（Gemini CLI 优先，其余 12 工具清单见 cc-switch README）。
-7. 余额查询扩面（当前仅 DeepSeek/Moonshot/OpenRouter 三家；各家接口不统一，按需求加）。
-8. 主进程报错信息双语化（v0.7.0 只做了渲染层+托盘）。
+2. ~~聚合模式~~ ✅（v0.8.4：模型名前缀「别名/模型」分发；无前缀走当前供应商；未知前缀 400；前缀家故障走兜底链。后续增强：Codex/Responses 侧聚合、模型列表拉取）。
+3. ~~会话阅读器~~ ✅（v0.8.5：Claude 全量解析，Codex MVP 只读文本消息；后续增强：Codex 工具调用解析、按项目分组）。
+4. ~~MCP 管理~~ ✅（v0.8.5：stdio 服务器增删；后续增强：编辑（当前=重存覆盖）、HTTP/SSE 类型服务器、Skills/提示词面板）。
+5. ~~主密码加密~~ ✅（v0.8.5：整文件加密+启动解锁屏；后续增强：口令修改、自动锁定）。
+6. 余额查询扩面（需逐家核实官方文档）。
+7. 主进程报错信息双语化。
+8. 更多工具支持：与「保持两个做精」拍板冲突，除非用户重新拍板。
 9. **不做**：WebDAV/S3 云同步（2026-10-30 用户拍板——原版把含 Key 配置明文传网盘，与"Key 绝不上传"铁律冲突；已用加密备份文件替代）。
 10. 发布后事项：考虑让用户申请代码签名证书。
 

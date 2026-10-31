@@ -86,6 +86,10 @@ export default function SettingsPanel({
   const [bakBusy, setBakBusy] = useState(false)
   const [router, setRouter] = useState<RouterStatus | null>(null)
   const [clearing, setClearing] = useState(false)
+  const [masterEnabled, setMasterEnabled] = useState(false)
+  const [masterPass, setMasterPass] = useState('')
+  const [masterPass2, setMasterPass2] = useState('')
+  const [masterBusy, setMasterBusy] = useState(false)
 
   const loadBackups = async () => {
     setBackups({
@@ -103,6 +107,10 @@ export default function SettingsPanel({
     window.api
       .routerStatus()
       .then(setRouter)
+      .catch(() => {})
+    window.api
+      .masterStatus()
+      .then((s) => setMasterEnabled(s.enabled))
       .catch(() => {})
   }, [])
 
@@ -162,6 +170,46 @@ export default function SettingsPanel({
 
   const s = store.settings
 
+  const enableMaster = async (): Promise<void> => {
+    if (masterPass.length < 8 || /\s/.test(masterPass)) {
+      notify(t(lang, 'set.pp.errLen'), 'err')
+      return
+    }
+    if (masterPass !== masterPass2) {
+      notify(t(lang, 'set.pp.errMismatch'), 'err')
+      return
+    }
+    setMasterBusy(true)
+    try {
+      await window.api.masterSet(masterPass)
+      notify(t(lang, 'set.master.toastOn'))
+      setMasterEnabled(true)
+      setMasterPass('')
+      setMasterPass2('')
+      await onChanged()
+    } catch (e) {
+      notify((e as Error).message, 'err')
+    } finally {
+      setMasterBusy(false)
+    }
+  }
+
+  const disableMaster = async (): Promise<void> => {
+    setMasterBusy(true)
+    try {
+      await window.api.masterRemove(masterPass)
+      notify(t(lang, 'set.master.toastOff'))
+      setMasterEnabled(false)
+      setMasterPass('')
+      setMasterPass2('')
+      await onChanged()
+    } catch (e) {
+      notify((e as Error).message, 'err')
+    } finally {
+      setMasterBusy(false)
+    }
+  }
+
   return (
     <div className="settings">
       <section className="card">
@@ -191,6 +239,46 @@ export default function SettingsPanel({
             onChange={(v) => void updateSetting({ language: v as AppSettings['language'] })}
           />
         </div>
+      </section>
+
+      <section className="card">
+        <h3>{t(lang, 'set.master')}</h3>
+        <p className="muted small">{t(lang, 'set.masterDesc')}</p>
+        <p className="muted small">{masterEnabled ? t(lang, 'set.master.on') : t(lang, 'set.master.off')}</p>
+        {!masterEnabled ? (
+          <div className="form" style={{ maxWidth: 420 }}>
+            <label>
+              {t(lang, 'set.master.pass')}
+              <input
+                type="password"
+                value={masterPass}
+                onChange={(e) => setMasterPass(e.target.value)}
+                placeholder={t(lang, 'lock.ph')}
+              />
+            </label>
+            <label>
+              {t(lang, 'set.master.pass2')}
+              <input type="password" value={masterPass2} onChange={(e) => setMasterPass2(e.target.value)} placeholder={t(lang, 'set.pp.ph2')} />
+            </label>
+            <div className="form-actions" style={{ justifyContent: 'flex-start' }}>
+              <button type="button" className="btn primary sm" onClick={() => void enableMaster()} disabled={masterBusy || !masterPass}>
+                {t(lang, 'set.master.enable')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="form" style={{ maxWidth: 420 }}>
+            <label>
+              {t(lang, 'set.master.passNow')}
+              <input type="password" value={masterPass} onChange={(e) => setMasterPass(e.target.value)} placeholder={t(lang, 'lock.ph')} />
+            </label>
+            <div className="form-actions" style={{ justifyContent: 'flex-start' }}>
+              <button type="button" className="btn sm" onClick={() => void disableMaster()} disabled={masterBusy || !masterPass}>
+                {t(lang, 'set.master.disable')}
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="card">

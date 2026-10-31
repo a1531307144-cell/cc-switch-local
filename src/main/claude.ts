@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import { atomicWrite } from './store'
 import { routerPort } from './router'
-import type { BackupInfo, Provider, SwitchResult, ToolStatus } from '../shared/types'
+import type { BackupInfo, McpServerSpec, Provider, SwitchResult, ToolStatus } from '../shared/types'
 
 const MAX_BACKUPS = 10
 const BACKUP_PREFIX = 'settings.json.bak-'
@@ -26,6 +26,26 @@ export function stamp(): string {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+}
+
+/** 备份 dir 下的单个文件（.bak-时间戳，保留最近 10 份）——Codex/MCP 管理复用 */
+export async function backupFile(dir: string, name: string): Promise<string | null> {
+  const full = path.join(dir, name)
+  if (!fs.existsSync(full)) return null
+  let bak = path.join(dir, `${name}.bak-${stamp()}`)
+  let i = 1
+  while (fs.existsSync(bak)) {
+    bak = path.join(dir, `${name}.bak-${stamp()}-${i}`)
+    i += 1
+  }
+  await fsp.copyFile(full, bak)
+  const entries = await fsp.readdir(dir)
+  const prefix = `${name}.bak-`
+  const baks = entries.filter((f) => f.startsWith(prefix)).sort()
+  for (const f of baks.slice(0, Math.max(0, baks.length - 10))) {
+    await fsp.rm(path.join(dir, f), { force: true })
+  }
+  return bak
 }
 
 async function readSettings(): Promise<Record<string, unknown>> {
@@ -174,4 +194,75 @@ export async function restoreBackup(file: string): Promise<SwitchResult> {
   const backup = await backupSettings()
   await fsp.writeFile(claudeSettingsPath(), content)
   return { ok: true, files: [claudeSettingsPath()], backup: backup ?? undefined }
+}
+
+// ─── MCP 服务器（~/.claude.json 顶层 mcpServers，v0.8.5：手术式只改这一个键） ───
+
+function claudeJsonPath(): string {
+  return path.join(homeDir(), '.claude.json')
+}
+
+async function readClaudeJson(): Promise<Record<string, unknown>> {
+  try {
+    let raw = await fsp.readFile(claudeJsonPath(), 'utf8')
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1)
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed as Record<string, unknown>
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException
+    if (err?.code === 'ENOENT') return {}
+    throw new Error(`读取 ~/.claude.json 失败：${err?.message ?? e}（已中止，不会写入）`)
+  }
+}
+
+export async function listMcpClaude(): Promise<McpServerSpec[]> {
+  const obj = await readClaudeJson()
+  const servers = obj.mcpServers
+  if (!servers || typeof servers !== 'object') return []
+  const out: McpServerSpec[] = []
+  for (const [name, v] of Object.entries(servers as Record<string, unknown>)) {
+    if (!v || typeof v !== 'object') continue
+    const o = v as Record<string, unknown>
+    out.push({
+      name,
+      command: typeof o.command === 'string' ? o.command : '',
+      args: Array.isArray(o.args) ? o.args.filter((a): a is string => typeof a === 'string') : [],
+      env: Object.fromEntries(
+        Object.entries((o.env ?? {}) as Record<string, unknown>)
+          .filter(([, ev]) => typeof ev === 'string')
+          .map(([k, ev]) => [k, ev as string])
+      )
+    })
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+async function writeMcpServers(servers: Record<string, unknown>): Promise<void> {
+  if (!fs.existsSync(claudeJsonPath())) {
+    // 首次写入前备份不存在的文件没有意义，但保持与其他写入一致的原子写
+  } else {
+    await backupFile(homeDir(), '.claude.json')
+  }
+  const obj = await readClaudeJson()
+  obj.mcpServers = servers
+  await atomicWrite(claudeJsonPath(), JSON.stringify(obj, null, 2))
+}
+
+export async function saveMcpClaude(spec: McpServerSpec): Promise<void> {
+  const obj = await readClaudeJson()
+  const servers = (obj.mcpServers && typeof obj.mcpServers === 'object' ? obj.mcpServers : {}) as Record<string, unknown>
+  const entry: Record<string, unknown> = { command: spec.command }
+  if (spec.args.length) entry.args = spec.args
+  if (Object.keys(spec.env).length) entry.env = spec.env
+  servers[spec.name] = entry
+  await writeMcpServers(servers)
+}
+
+export async function deleteMcpClaude(name: string): Promise<void> {
+  const obj = await readClaudeJson()
+  const servers = (obj.mcpServers && typeof obj.mcpServers === 'object' ? obj.mcpServers : {}) as Record<string, unknown>
+  if (!(name in servers)) return
+  delete servers[name]
+  await writeMcpServers(servers)
 }

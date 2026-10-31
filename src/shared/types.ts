@@ -86,6 +86,8 @@ export interface StoreShape {
   current: Record<ToolId, string | null>
   providers: Provider[]
   settings: AppSettings
+  /** 主密码加密已启用且尚未解锁（渲染层据此显示解锁屏） */
+  locked?: true
 }
 
 export interface TestResult {
@@ -155,6 +157,48 @@ export interface TestInput {
   model?: string
 }
 
+// ─── 会话阅读器（解析各工具本地会话日志的只读视图） ───
+
+export interface SessionInfo {
+  tool: ToolId
+  /** 会话文件的绝对路径（读取时回传，主进程校验其位于会话根目录内） */
+  file: string
+  project: string
+  id: string
+  mtime: number
+  size: number
+}
+
+export interface SessionEntry {
+  role: 'user' | 'assistant' | 'tool'
+  text: string
+  ts: number
+  /** role=tool 时的工具名 */
+  toolName?: string
+}
+
+export interface SessionPage {
+  entries: SessionEntry[]
+  /** 超长会话被截断（仅展示前 N 条） */
+  truncated: boolean
+}
+
+// ─── MCP 服务器管理 ───
+
+export interface McpServerSpec {
+  name: string
+  command: string
+  args: string[]
+  env: Record<string, string>
+}
+
+export interface McpListResult {
+  tool: ToolId
+  /** 配置文件路径 */
+  file: string
+  servers: McpServerSpec[]
+}
+
 // ─── 用量统计（扫描各工具本地会话日志的聚合结果） ───
 
 export interface UsageEntry {
@@ -207,6 +251,18 @@ export interface Api {
   backupExport(passphrase: string): Promise<{ savedTo?: string; canceled?: boolean }>
   backupImport(passphrase: string): Promise<{ added: number; skipped: number; canceled?: boolean }>
   usageGet(): Promise<UsageStats>
+  /** 会话阅读器 */
+  sessionsList(tool: ToolId): Promise<SessionInfo[]>
+  sessionsRead(tool: ToolId, file: string): Promise<SessionPage>
+  /** MCP 服务器管理 */
+  mcpList(tool: ToolId): Promise<McpListResult>
+  mcpSave(tool: ToolId, spec: McpServerSpec): Promise<boolean>
+  mcpDelete(tool: ToolId, name: string): Promise<boolean>
+  /** 主密码：解锁 / 设置 / 解除 */
+  storeUnlock(passphrase: string): Promise<boolean>
+  masterSet(passphrase: string): Promise<boolean>
+  masterRemove(passphrase: string): Promise<boolean>
+  masterStatus(): Promise<{ enabled: boolean }>
   routerStatus(): Promise<RouterStatus>
   routerSet(tool: ToolId, enabled: boolean): Promise<RouterStatus>
   /** 聚合模式开关（仅 claude 路由）：开启后按模型名前缀「别名/模型」分发 */

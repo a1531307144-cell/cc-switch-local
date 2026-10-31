@@ -13,6 +13,8 @@ export const STRINGS = {
   'app.initFail': { zh: '初始化失败', en: 'Initialization failed' },
   'side.usage': { zh: '用量统计', en: 'Usage' },
   'side.settings': { zh: '设置', en: 'Settings' },
+  'side.sessions': { zh: '会话阅读器', en: 'Sessions' },
+  'side.mcp': { zh: 'MCP 服务器', en: 'MCP servers' },
   'side.collapse': { zh: '收起侧栏', en: 'Collapse sidebar' },
   'side.expand': { zh: '展开侧栏', en: 'Expand sidebar' },
   'side.privacy1': { zh: '数据仅存本机 · 无遥测', en: 'Data stays local · no telemetry' },
@@ -89,6 +91,74 @@ export const STRINGS = {
     zh: '聚合模式下用「别名/模型」直达该供应商；仅限字母/数字/下划线/中划线。英文名称会自动推导，无需填写',
     en: 'Used as the "alias/model" prefix in aggregate mode; letters/digits/underscore/dash only. English names auto-derive one'
   },
+
+  // ── 会话阅读器 ──
+  'sess.title': { zh: '会话阅读器', en: 'Session reader' },
+  'sess.desc': {
+    zh: '只读浏览本机 Claude Code / Codex 会话日志；数据不出本机，工具调用以摘要形式展示',
+    en: 'Read-only browsing of local Claude Code / Codex session logs; stays on this machine, tool calls shown as summaries'
+  },
+  'sess.none': { zh: '暂无会话日志', en: 'No session logs yet' },
+  'sess.pick': { zh: '从左侧选择一个会话阅读', en: 'Pick a session on the left to read' },
+  'sess.loadFail': { zh: '读取会话失败：{msg}', en: 'Failed to read session: {msg}' },
+  'sess.truncated': { zh: '（会话过长，仅展示前 {n} 条）', en: '(long session — showing first {n} entries)' },
+  'sess.you': { zh: '用户', en: 'User' },
+  'sess.assistant': { zh: '助手', en: 'Assistant' },
+  'sess.empty': { zh: '（无文本内容）', en: '(no text content)' },
+  'sess.toolUse': { zh: '工具调用', en: 'Tool call' },
+  'sess.toolResult': { zh: '工具结果', en: 'Tool result' },
+
+  // ── MCP 服务器 ──
+  'mcp.title': { zh: 'MCP 服务器', en: 'MCP servers' },
+  'mcp.desc': {
+    zh: '管理 Claude Code（~/.claude.json）与 Codex（~/.codex/config.toml）的 MCP 服务器配置；只改动 MCP 相关键，其余内容原样保留，写入前自动备份',
+    en: 'Manage MCP servers for Claude Code (~/.claude.json) and Codex (~/.codex/config.toml); only MCP keys are touched, everything else preserved, auto backup before write'
+  },
+  'mcp.none': { zh: '未配置任何 MCP 服务器', en: 'No MCP servers configured' },
+  'mcp.add': { zh: '+ 添加服务器', en: '+ Add server' },
+  'mcp.name': { zh: '名称 *', en: 'Name *' },
+  'mcp.namePh': { zh: '仅字母/数字/下划线/中划线，如 fetch、github', en: 'letters/digits/underscore/dash, e.g. fetch, github' },
+  'mcp.command': { zh: 'command *', en: 'command *' },
+  'mcp.commandPh': { zh: '如 npx、uvx、node', en: 'e.g. npx, uvx, node' },
+  'mcp.args': { zh: '参数（每行一个）', en: 'Arguments (one per line)' },
+  'mcp.argsPh': { zh: '-y\nmcp-server-fetch', en: '-y\nmcp-server-fetch' },
+  'mcp.env': { zh: '环境变量（每行 KEY=VALUE）', en: 'Environment (KEY=VALUE per line)' },
+  'mcp.envPh': { zh: 'API_TOKEN=xxx', en: 'API_TOKEN=xxx' },
+  'mcp.saved': { zh: '已保存 MCP 服务器「{name}」（重启对应工具会话后生效）', en: 'MCP server "{name}" saved (restart tool sessions to apply)' },
+  'mcp.deleted': { zh: '已删除 MCP 服务器「{name}」', en: 'MCP server "{name}" deleted' },
+  'mcp.confirmDelete': { zh: '确定删除 MCP 服务器「{name}」吗？', en: 'Delete MCP server "{name}"?' },
+  'mcp.editTitle': { zh: '编辑会覆盖同名服务器', en: 'Saving overwrites a server with the same name' },
+  'mcp.err.args': { zh: '参数/环境变量格式有误（KEY=VALUE）', en: 'Invalid args/env format (KEY=VALUE)' },
+  'mcp.deleteFail': { zh: '删除失败：{msg}', en: 'Delete failed: {msg}' },
+
+  // ── 主密码 ──
+  'lock.title': { zh: '供应商库已加密', en: 'Provider library is encrypted' },
+  'lock.desc': {
+    zh: '输入主密码解锁本次会话。密钥只在本进程内存里，不会写入任何文件',
+    en: 'Enter the master password to unlock for this session. The key stays in process memory only'
+  },
+  'lock.ph': { zh: '主密码', en: 'Master password' },
+  'lock.unlock': { zh: '解锁', en: 'Unlock' },
+  'lock.unlocking': { zh: '解锁中…', en: 'Unlocking…' },
+  'lock.wrong': { zh: '主密码错误', en: 'Wrong master password' },
+  'lock.hint': {
+    zh: '忘记主密码？只能通过「设置 → 数据危险区 → 一键清空全部数据」重置（会删除所有供应商）',
+    en: 'Forgot it? The only reset is Settings → Danger zone → Clear all data (deletes all providers)'
+  },
+  'set.master': { zh: '主密码加密', en: 'Master password' },
+  'set.masterDesc': {
+    zh: '开启后 providers.json 整文件用 AES-256-GCM 加密，每次启动需输入主密码解锁。主密码不存储、不可找回；忘记只能清空数据。Claude Code / Codex 配置文件里的 Key 不受此开关影响（那是工具本身的明文要求）',
+    en: 'When enabled, providers.json is encrypted as a whole with AES-256-GCM and the master password is required at every launch. The password is never stored and cannot be recovered. Keys in tool config files are unaffected (those are plaintext by the tools’ own design)'
+  },
+  'set.master.on': { zh: '已启用加密（本次会话已解锁）', en: 'Enabled (unlocked for this session)' },
+  'set.master.off': { zh: '未启用', en: 'Not enabled' },
+  'set.master.enable': { zh: '启用加密', en: 'Enable encryption' },
+  'set.master.disable': { zh: '解除加密', en: 'Disable encryption' },
+  'set.master.pass': { zh: '主密码（至少 8 位，不含空格）', en: 'Master password (min 8 chars, no spaces)' },
+  'set.master.pass2': { zh: '再输一遍主密码', en: 'Repeat master password' },
+  'set.master.passNow': { zh: '输入当前主密码以解除', en: 'Current master password to disable' },
+  'set.master.toastOn': { zh: '主密码加密已启用：重启应用后生效', en: 'Encryption enabled: takes effect after app restart' },
+  'set.master.toastOff': { zh: '已解除主密码加密', en: 'Master password encryption disabled' },
 
   // ── 更新横幅 ──
   'update.available': { zh: '发现新版本 v{v}', en: 'New version v{v} available' },
