@@ -22,6 +22,8 @@ export interface Provider {
   /** OpenAI 兼容端点的报文格式：codex 写入 config.toml 的 wire_api；claude（protocol=openai）选择上游走 Chat Completions 或 Responses API（v0.8.10 起） */
   wireApi?: 'responses' | 'chat'
   notes?: string
+  /** 图标 slug（v0.8.14 起）：从预设带入随供应商持久化，卡片渲染优先于域名识别 */
+  icon?: string
   /** 最近一次余额查询结果（v0.8.8 起，点卡片「余额」时持久化；ok 才上卡面） */
   lastBalance?: { ok: boolean; balance: number; currency?: string; checkedAt: number }
   createdAt: number
@@ -41,6 +43,8 @@ export interface ProviderInput {
   model?: string
   wireApi?: 'responses' | 'chat'
   notes?: string
+  /** 图标 slug（v0.8.14）：从预设带入 */
+  icon?: string
 }
 
 export interface AppSettings {
@@ -141,6 +145,8 @@ export interface Preset {
   category?: 'official' | 'cn_official' | 'aggregator' | 'third_party' | 'cloud_provider' | 'local'
   /** 同族变体分组键（v0.8.13 起）：同 family 的条目在添加页聚合为一张卡（N 个版本） */
   family?: string
+  /** 图标 slug（v0.8.14 起）：来自 cc-switch 图标库，文件在 assets/vendors/（presetIcons.ts 解析） */
+  icon?: string
   /** 搜索键：名称 + 域名小写，渲染层过滤用 */
   searchKey?: string
 }

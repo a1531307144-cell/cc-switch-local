@@ -6,6 +6,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: 'Anthropic 官方（API 计费）',
+    icon: 'anthropic',
     category: 'official',
     baseUrl: 'https://api.anthropic.com',
     keyType: 'api_key',
@@ -14,6 +15,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: 'DeepSeek',
+    icon: 'deepseek',
     category: 'cn_official',
     baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-chat',
@@ -22,6 +24,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: 'Moonshot Kimi',
+    icon: 'kimi',
     category: 'cn_official',
     baseUrl: 'https://api.moonshot.cn/anthropic',
     model: 'kimi-k2-turbo-preview',
@@ -30,6 +33,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: '智谱 GLM',
+    icon: 'zhipu',
     category: 'cn_official',
     baseUrl: 'https://open.bigmodel.cn/api/anthropic',
     model: 'glm-4.6',
@@ -38,6 +42,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: '硅基流动 SiliconFlow',
+    icon: 'siliconflow',
     category: 'cn_official',
     baseUrl: 'https://api.siliconflow.cn/v1',
     model: 'deepseek-ai/DeepSeek-V4-Flash',
@@ -47,6 +52,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: '阿里云百炼 Qwen',
+    icon: 'qwen',
     category: 'cn_official',
     baseUrl: 'https://dashscope.aliyuncs.com/api/v2/apps/claude-code/proxy',
     model: 'qwen3-coder-plus',
@@ -56,6 +62,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: 'DeepSeek（OpenAI 兼容）',
+    icon: 'deepseek',
     baseUrl: 'https://api.deepseek.com/v1',
     model: 'deepseek-chat',
     protocol: 'openai',
@@ -64,6 +71,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: 'Moonshot Kimi（OpenAI 兼容）',
+    icon: 'kimi',
     category: 'cn_official',
     baseUrl: 'https://api.moonshot.cn/v1',
     model: 'kimi-k2-turbo-preview',
@@ -73,6 +81,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: '智谱 GLM（OpenAI 兼容）',
+    icon: 'zhipu',
     category: 'cn_official',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-4.6',
@@ -82,6 +91,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: '阿里云百炼 Qwen（OpenAI 兼容）',
+    icon: 'qwen',
     category: 'cn_official',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     model: 'qwen3-coder-plus',
@@ -91,6 +101,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'codex',
     name: 'OpenAI 官方',
+    icon: 'codex',
     category: 'official',
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-5-codex',

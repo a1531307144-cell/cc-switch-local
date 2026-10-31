@@ -149,7 +149,7 @@ export default function ProviderCard({
     >
       {isCurrent && <span className="pcard-inuse">{t(lang, 'card.inUse')}</span>}
       <div className="pcard-logo">
-        <VendorLogo vendor={vendor} fallbackText={provider.name} />
+        <VendorLogo vendor={vendor} fallbackText={provider.name} iconSlug={provider.icon} />
       </div>
       <div className="pcard-main">
         <div className="pcard-name" title={provider.name}>

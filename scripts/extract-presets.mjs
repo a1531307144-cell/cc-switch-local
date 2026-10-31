@@ -77,7 +77,8 @@ for (const p of claudeRaw) {
     baseUrl,
     keyType,
     category: typeof p.category === 'string' ? p.category : undefined,
-    family: typeof p.family === 'string' ? p.family : undefined
+    family: typeof p.family === 'string' ? p.family : undefined,
+    icon: typeof p.icon === 'string' && p.icon ? p.icon : undefined
   })
 }
 
@@ -120,7 +121,8 @@ for (const p of codexRaw) {
     model,
     wireApi: wireApi === 'chat' ? 'chat' : 'responses',
     category: typeof p.category === 'string' ? p.category : undefined,
-    family: typeof p.family === 'string' ? p.family : undefined
+    family: typeof p.family === 'string' ? p.family : undefined,
+    icon: typeof p.icon === 'string' && p.icon ? p.icon : undefined
   })
 }
 
@@ -150,6 +152,7 @@ const fmt = (list) =>
       if (p.model) props.push(`model: ${JSON.stringify(p.model)}`)
       if (p.category) props.push(`category: '${p.category}'`)
       if (p.family) props.push(`family: '${p.family}'`)
+      if (p.icon) props.push(`icon: '${p.icon}'`)
       props.push(`searchKey: ${JSON.stringify(`${p.name} ${domain}${alias}`.toLowerCase())}`)
       return `  { ${props.join(', ')} }`
     })

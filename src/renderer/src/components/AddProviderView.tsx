@@ -85,7 +85,8 @@ export default function AddProviderView({
       protocol: p.protocol ?? 'anthropic',
       model: p.model ?? '',
       wireApi: p.wireApi ?? (p.tool === 'codex' ? 'responses' : 'chat'),
-      notes: t(lang, 'form.presetApplied', { name: p.name })
+      notes: t(lang, 'form.presetApplied', { name: p.name }),
+      icon: p.icon ?? ''
     })
   }
 
@@ -143,7 +144,7 @@ export default function AddProviderView({
               })()
               return (
                 <button key={c.key} type="button" className="preset-card" onClick={() => openPreset(c.preset)} title={c.preset.baseUrl}>
-                  <VendorLogo vendor={vendor} fallbackText={c.name} />
+                  <VendorLogo vendor={vendor} fallbackText={c.name} iconSlug={c.preset.icon} />
                   <span className="preset-card-text">
                     <strong>
                       {c.name}

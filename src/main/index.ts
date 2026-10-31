@@ -194,6 +194,9 @@ function validateProviderInput(input: ProviderInput): void {
   }
   if (input.model !== undefined && (!isStr(input.model) || input.model.length > 200)) throw new Error('模型名过长')
   if (input.notes !== undefined && (!isStr(input.notes) || input.notes.length > 2000)) throw new Error('备注过长')
+  if (input.icon !== undefined && (!isStr(input.icon) || !/^[A-Za-z0-9_-]{1,64}$/.test(input.icon))) {
+    throw new Error('非法的图标标识')
+  }
   if (input.id !== undefined && (!isStr(input.id) || input.id.length > 64)) throw new Error('非法的 id')
 }
 
@@ -253,6 +256,7 @@ function registerIpc(): void {
         model: input.model || undefined,
         wireApi: input.wireApi || undefined,
         notes: input.notes || undefined,
+        icon: input.icon ?? existing.icon,
         updatedAt: now
       }
       store.providers[idx] = updated
@@ -272,6 +276,7 @@ function registerIpc(): void {
       model: input.model || undefined,
       wireApi: input.wireApi || undefined,
       notes: input.notes || undefined,
+      icon: input.icon,
       createdAt: now,
       updatedAt: now
     }

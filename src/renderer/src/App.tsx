@@ -374,7 +374,8 @@ export default function App() {
       alias: d.tool === 'claude' ? d.alias.trim() : undefined,
       model: d.model.trim(),
       wireApi: d.wireApi,
-      notes: d.notes.trim()
+      notes: d.notes.trim(),
+      icon: d.icon || undefined
     })
     notify(d.id ? tr('toast.saved') : tr('toast.added'))
     setDraft(null)
@@ -780,7 +781,8 @@ export default function App() {
                             alias: x.alias ?? '',
                             model: x.model ?? '',
                             wireApi: x.wireApi ?? (x.tool === 'codex' ? 'responses' : 'chat'),
-                            notes: x.notes ?? ''
+                            notes: x.notes ?? '',
+                            icon: x.icon ?? ''
                           })
                         }
                         onClone={clone}

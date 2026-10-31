@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import type { VendorInfo } from '../../../shared/vendors'
+import { presetIconUrl } from '../presetIcons'
 
 // 构建时内置的厂商图标（simple-icons，CC0）——运行时不向任何第三方请求图标
 const vendorIcons = import.meta.glob('../assets/vendors/*.svg', {
@@ -24,8 +25,19 @@ export function VendorChip({ vendor }: { vendor: VendorInfo }) {
   )
 }
 
-/** 卡片主视觉：有内置图标用大号品牌图标，否则彩色字母方块兜底 */
-export function VendorLogo({ vendor, fallbackText }: { vendor: VendorInfo | null; fallbackText: string }) {
+/** 卡片主视觉：优先预设图标（v0.8.14），其次域名识别的内置图标，最后彩色字母方块兜底 */
+export function VendorLogo({
+  vendor,
+  fallbackText,
+  iconSlug
+}: {
+  vendor: VendorInfo | null
+  fallbackText: string
+  /** 预设/供应商记录携带的图标 slug（cc-switch 图标库） */
+  iconSlug?: string
+}) {
+  const presetUrl = presetIconUrl(iconSlug)
+  if (presetUrl) return <img className="vendor-logo" src={presetUrl} alt="" draggable={false} />
   const url = vendor?.icon ? vendorIcons[`../assets/vendors/${vendor.icon}.svg`] : undefined
   if (url) return <img className="vendor-logo" src={url} alt="" draggable={false} />
   const letter = vendor?.letter ?? (fallbackText.trim().charAt(0).toUpperCase() || '?')

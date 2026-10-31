@@ -16,6 +16,8 @@ export interface FormDraft {
   model: string
   wireApi: 'responses' | 'chat'
   notes: string
+  /** 预设图标 slug（v0.8.14）：随供应商落库 */
+  icon?: string
 }
 
 export function emptyDraft(tool: ToolId): FormDraft {
@@ -29,7 +31,8 @@ export function emptyDraft(tool: ToolId): FormDraft {
     alias: '',
     model: '',
     wireApi: tool === 'codex' ? 'responses' : 'chat',
-    notes: ''
+    notes: '',
+    icon: ''
   }
 }
 

@@ -29,6 +29,7 @@ export function sanitizeProviderRecord(raw: unknown): Provider | null {
   if (p.alias !== undefined && (typeof p.alias !== 'string' || (p.alias !== '' && !ALIAS_RE.test(p.alias)))) return null
   if (p.model !== undefined && (typeof p.model !== 'string' || p.model.length > 200)) return null
   if (p.notes !== undefined && (typeof p.notes !== 'string' || p.notes.length > 2000)) return null
+  if (p.icon !== undefined && (typeof p.icon !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(p.icon))) return null
   // lastBalance（v0.8.8）：形状非法整体丢弃该字段，不影响记录本身
   let lastBalance: Provider['lastBalance'] | undefined
   if (p.lastBalance !== undefined) {
@@ -61,6 +62,7 @@ export function sanitizeProviderRecord(raw: unknown): Provider | null {
     model: typeof p.model === 'string' && p.model ? p.model : undefined,
     wireApi: p.wireApi === 'chat' ? 'chat' : p.wireApi === 'responses' ? 'responses' : undefined,
     notes: typeof p.notes === 'string' && p.notes ? p.notes : undefined,
+    ...(typeof p.icon === 'string' && p.icon ? { icon: p.icon } : {}),
     ...(lastBalance ? { lastBalance } : {}),
     createdAt: typeof p.createdAt === 'number' && Number.isFinite(p.createdAt) ? p.createdAt : now,
     updatedAt: typeof p.updatedAt === 'number' && Number.isFinite(p.updatedAt) ? p.updatedAt : now
