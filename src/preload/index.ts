@@ -43,6 +43,16 @@ const api: Api = {
     return () => ipcRenderer.removeListener('agentUpgrade:progress', l)
   },
   sessionsExportMd: (tool: ToolId, file: string) => ipcRenderer.invoke('sessions:exportMd', tool, file),
+  promptsList: () => ipcRenderer.invoke('prompts:list'),
+  promptsSave: (input: { id?: string; tool: ToolId; name: string; content: string }) => ipcRenderer.invoke('prompts:save', input),
+  promptsDelete: (id: string) => ipcRenderer.invoke('prompts:delete', id),
+  promptsApply: (id: string) => ipcRenderer.invoke('prompts:apply', id),
+  promptsImportCurrent: (tool: ToolId) => ipcRenderer.invoke('prompts:importCurrent', tool),
+  groupsList: () => ipcRenderer.invoke('groups:list'),
+  groupsSave: (input: { id?: string; name: string; members: { claude: string | null; codex: string | null } }) =>
+    ipcRenderer.invoke('groups:save', input),
+  groupsDelete: (id: string) => ipcRenderer.invoke('groups:delete', id),
+  groupsApply: (id: string) => ipcRenderer.invoke('groups:apply', id),
   clearAllData: () => ipcRenderer.invoke('data:clearAll'),
   onDeeplinkProvider: (cb: (r: DeeplinkResult) => void) => {
     const l = (_e: unknown, r: DeeplinkResult) => cb(r)

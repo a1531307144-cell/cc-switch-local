@@ -12,7 +12,7 @@ import type { BalanceResult } from '../shared/types'
 
 export function balanceSupported(baseUrl: string): boolean {
   const v = detectVendor(baseUrl)
-  return v?.id === 'deepseek' || v?.id === 'moonshot' || v?.id === 'openrouter'
+  return v?.id === 'deepseek' || v?.id === 'moonshot' || v?.id === 'openrouter' || v?.id === 'siliconflow'
 }
 
 function num(v: unknown): number | null {
@@ -40,6 +40,7 @@ interface EndpointOverride {
   deepseek?: string
   moonshot?: string
   openrouter?: string
+  siliconflow?: string
 }
 
 export async function fetchBalance(baseUrl: string, apiKey: string, endpoints?: EndpointOverride): Promise<BalanceResult> {
@@ -75,6 +76,17 @@ export async function fetchBalance(baseUrl: string, apiKey: string, endpoints?: 
       const usage = num(j.data?.total_usage) ?? 0
       if (total === null) return { ok: false, message: '响应格式不符合预期' }
       return { ok: true, balance: Math.round((total - usage) * 100) / 100, currency: 'USD' }
+    }
+    if (v?.id === 'siliconflow') {
+      // GET /v1/user/info（官方文档 siliconflow.readme.io/reference/user-info）
+      // → data: { balance, chargeBalance, totalBalance, ... } 均为字符串金额（CNY）
+      // totalBalance 含赠送额度，比 balance 更接近实际可用（官方字段语义分歧，见 v0.8.9 实测备注）
+      const j = (await fetchJson(endpoints?.siliconflow ?? 'https://api.siliconflow.cn/v1/user/info', apiKey)) as {
+        data?: { balance?: unknown; totalBalance?: unknown }
+      }
+      const balance = num(j.data?.totalBalance) ?? num(j.data?.balance)
+      if (balance === null) return { ok: false, message: '响应格式不符合预期' }
+      return { ok: true, balance, currency: 'CNY' }
     }
     return { ok: false, message: '该供应商暂不支持余额查询' }
   } catch (e) {

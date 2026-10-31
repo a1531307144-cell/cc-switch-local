@@ -18,6 +18,8 @@ import { routerPort, routerStatus, startRouter, stopRouter, resetBreakerForTest 
 import { detectVendor } from '../shared/vendors'
 import { aggregateAliasOf, resolveAggregatePrefix } from '../shared/aggregate'
 import { listSessions, readSession, buildSessionMarkdown } from './sessions'
+import { listPrompts, savePrompt, applyPrompt, deletePrompt, importCurrentPrompt, currentPromptFiles } from './prompts'
+import { listGroups, saveGroup, applyGroup, deleteGroup } from './groups'
 import { mcpDelete, mcpList, mcpSave } from './mcp'
 import http from 'node:http'
 
@@ -1119,6 +1121,7 @@ export async function runSelfTest(): Promise<void> {
       const dsAddr = ds.address() as { port: number }
       try {
         assert(balanceSupported('https://api.deepseek.com'), 'deepseek 应支持余额查询')
+        assert(balanceSupported('https://api.siliconflow.cn'), 'siliconflow 应支持余额查询（v0.8.9）')
         assert(!balanceSupported('https://relay.example-visual.com'), '未知中转站不应支持余额查询')
 
         const okR = await fetchBalance('https://api.deepseek.com', 'sk-balance-ok-12345678', {
@@ -1130,6 +1133,28 @@ export async function runSelfTest(): Promise<void> {
           deepseek: `http://127.0.0.1:${dsAddr.port}/user/balance`
         })
         assert(authR.ok === false && !!authR.message?.includes('鉴权'), `401 应报鉴权失败：${JSON.stringify(authR)}`)
+
+        // SiliconFlow：/v1/user/info，取 totalBalance（含赠送额度），balance 为负时仍以 total 为准
+        const sf = http.createServer((req, res) => {
+          const auth = req.headers.authorization ?? ''
+          if (auth !== 'Bearer sk-sf-ok-1234567890') {
+            res.writeHead(401)
+            res.end('{}')
+            return
+          }
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ code: 20000, data: { balance: '-5.00', totalBalance: '88.50', chargeBalance: '93.50' } }))
+        })
+        await new Promise<void>((r) => sf.listen(0, '127.0.0.1', () => r()))
+        const sfAddr = sf.address() as { port: number }
+        try {
+          const sfR = await fetchBalance('https://api.siliconflow.cn', 'sk-sf-ok-1234567890', {
+            siliconflow: `http://127.0.0.1:${sfAddr.port}/v1/user/info`
+          })
+          assert(sfR.ok === true && sfR.balance === 88.5 && sfR.currency === 'CNY', `siliconflow 余额解析错误：${JSON.stringify(sfR)}`)
+        } finally {
+          sf.close()
+        }
 
         const unsupported = await fetchBalance('https://relay.example-visual.com', 'sk-x-1234567890')
         assert(unsupported.ok === false, '不支持的厂商应返回失败而非发起请求')
@@ -1290,6 +1315,75 @@ export async function runSelfTest(): Promise<void> {
         rejected = true
       }
       assert(rejected, '非法 MCP 名称必须拒绝')
+    })
+
+    await step('提示词库：保存/应用写 CLAUDE.md（带备份）/导入/删除 + 加载防线（v0.8.9）', async () => {
+      const created = await savePrompt({ tool: 'claude', name: '自测提示词', content: '# 规则\n\n始终用中文回复。' })
+      assert((await listPrompts()).some((p) => p.id === created.id), '保存后应可列出')
+      // 应用 → 写 ~/.claude/CLAUDE.md（夹具 home）
+      await applyPrompt(created.id)
+      const claudeMd = path.join(home, '.claude', 'CLAUDE.md')
+      assert(fs.existsSync(claudeMd), '应用后 CLAUDE.md 应存在')
+      const written = await fsp.readFile(claudeMd, 'utf8')
+      assert(written.includes('始终用中文回复'), '应用内容应写入文件')
+      const baks = (await fsp.readdir(path.join(home, '.claude'))).filter((f) => f.startsWith('CLAUDE.md.bak-'))
+      assert(baks.length === 0, '首次应用（此前无文件）不产生备份')
+      // 二次应用：旧文件应先备份
+      await savePrompt({ tool: 'claude', name: '提示词B', content: '# 规则B' })
+      const b = (await listPrompts()).find((p) => p.name === '提示词B')!
+      await applyPrompt(b.id)
+      const baks2 = (await fsp.readdir(path.join(home, '.claude'))).filter((f) => f.startsWith('CLAUDE.md.bak-'))
+      assert(baks2.length === 1, `二次应用应备份旧文件，实际 ${baks2.length}`)
+      // 当前文件状态 + 导入
+      const cur = await currentPromptFiles()
+      assert(cur.claude.exists && cur.claude.content.includes('规则B'), '当前文件状态应反映已应用内容')
+      const imported = await importCurrentPrompt('claude')
+      assert(imported.content.includes('规则B'), '导入当前文件应得到已应用内容')
+      // 加载防线：坏条目被丢弃
+      const raw = JSON.parse(await fsp.readFile(storeFile(), 'utf8')) as { prompts?: unknown[] }
+      raw.prompts = [...(raw.prompts ?? []), { id: 'badp', tool: 'nope', name: 'x', content: 'y' }]
+      await fsp.writeFile(storeFile(), JSON.stringify(raw), 'utf8')
+      const reloaded = loadStore()
+      assert((reloaded.prompts ?? []).every((p) => p.id !== 'badp'), '非法工具类型的提示词应被丢弃')
+      assert((reloaded.prompts ?? []).some((p) => p.id === imported.id), '合法条目应保留')
+      // 删除
+      await deletePrompt(created.id)
+      await deletePrompt(b.id)
+      await deletePrompt(imported.id)
+      assert((await listPrompts()).length === 0, '全部删除后应为空')
+    })
+
+    await step('方案组：保存/应用（写两工具配置）/缺失成员跳过/删除（v0.8.9）', async () => {
+      const s = loadStore()
+      const paC = s.providers.find((p) => p.tool === 'claude')
+      const pcC = s.providers.find((p) => p.tool === 'codex')
+      assert(!!paC && !!pcC, '夹具应有 claude 与 codex 供应商')
+      const g = await saveGroup({ name: '自测组合', members: { claude: paC!.id, codex: pcC!.id } })
+      assert((await listGroups()).some((x) => x.id === g.id), '保存后应可列出')
+      // 先把 current 挪开，保证应用会真实切换（重新加载：saveGroup 已写库，旧快照会覆盖掉它）
+      const sNow = loadStore()
+      sNow.current.claude = null
+      sNow.current.codex = null
+      await saveStore(sNow)
+      const r = await applyGroup(g.id)
+      assert(r.switched.includes('claude') && r.switched.includes('codex'), `两个工具都应切换：${JSON.stringify(r)}`)
+      assert(r.skipped.length === 0, '成员存在时不应有跳过')
+      const s2 = loadStore()
+      assert(s2.current.claude === paC!.id && s2.current.codex === pcC!.id, '应用后 current 应指向方案组成员')
+      // 缺失成员：指向不存在的 id → 跳过不算错误
+      const g2 = await saveGroup({ name: '缺失成员组合', members: { claude: 'ghost-id', codex: null } })
+      const r2 = await applyGroup(g2.id)
+      assert(!r2.switched.includes('claude') && r2.skipped.length === 1, `缺失成员应跳过：${JSON.stringify(r2)}`)
+      assert(r2.switched.includes('codex'), 'null 成员应恢复官方并计入切换')
+      // 加载防线 + 删除
+      const raw = JSON.parse(await fsp.readFile(storeFile(), 'utf8')) as { groups?: unknown[] }
+      raw.groups = [...(raw.groups ?? []), { id: 'badg', name: '', members: null }]
+      await fsp.writeFile(storeFile(), JSON.stringify(raw), 'utf8')
+      const reloaded = loadStore()
+      assert((reloaded.groups ?? []).every((x) => x.id !== 'badg'), '坏方案组应被丢弃')
+      await deleteGroup(g.id)
+      await deleteGroup(g2.id)
+      assert((await listGroups()).length === 0, '全部删除后应为空')
     })
 
     await step('主密码加密：整文件加密/锁定/解锁/解除', async () => {

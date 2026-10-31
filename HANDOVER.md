@@ -14,17 +14,17 @@
 - 用户的核心诉求是**安全性**：API Key 全部存本机、代码开源可审计、零遥测零上传。任何"把数据传出去"的功能都与项目定位冲突，不要加。
 - 对标 farion1231/cc-switch（v4.0.21 起为功能参照物）。2026-10-30 用户拍板「功能实现完全相似」为目标分多版走：v0.6.0 交付预设库 / 关键字段写入 / 用量统计 / 本机路由最简版 / 托盘 / 加密备份；**协议转换与聚合模式、MCP、多工具支持、云同步（决定不做，用加密备份文件替代）见 §9**。
 
-## 2. 当前状态（2026-10-31：v0.8.8 CLI 版本管理 + 余额上卡面 + 会话增强）
+## 2. 当前状态（2026-10-31：v0.8.9 提示词库 + 方案组 + 余额扩面）
 
 | 项 | 状态 |
 | --- | --- |
 | TypeScript 类型检查 | ✅ 通过 |
-| 端到端自测（42 步断言） | ✅ 42/42 通过（新增会话导出构建、余额持久化、版本比较三步） |
-| CDP 实机验证 | ✅ v0.8.8 共 8/8：余额角标+tooltip、会话 resume 命令/搜索过滤/导出按钮、设置页 CLI 区真机检测（Claude Code 2.1.312→2.1.316 可升级、Codex 0.165.0→0.166.0 可升级） |
-| 新功能（v0.8.8） | ✅ **CLI 工具版本管理**（agentVersion.ts：npm 探测 ProgramFiles 优先+中性 cwd 防坏 shim、`npm view` 查新、一键 `install -g` 流式输出可取消、原生安装检测提示自带升级）；**余额上卡面**（recordBalance 持久化 lastBalance 到 Provider，sanitize 形状校验，.pcard-balance 角标）；**会话增强**（sess-toolbar 搜索过滤、buildSessionMarkdown+exportSessionMd 导出、resume 命令复制） |
+| 端到端自测（44 步断言） | ✅ 44/44 通过（新增提示词库全链路、方案组应用、SiliconFlow 余额解析） |
+| CDP 实机验证 | ✅ v0.8.9 共 8/8：SiliconFlow 字母徽章、提示词新建→应用→使用中徽章→CLAUDE.md 真实写入、方案组保存→成员解析→应用提示、侧栏新入口 |
+| 新功能（v0.8.9） | ✅ **提示词库**（prompts.ts + PromptsView：store.prompts 白名单清洗，应用到 ~/.claude/CLAUDE.md / ~/.codex/AGENTS.md 带 backupFile，使用中=去尾换行内容比对，导入当前文件）；**方案组**（groups.ts + GroupsView：store.groups，applyGroup 逐工具走 switchProviderForTool，与当前一致跳过、缺失成员 skip 不算错）；**余额扩面**：+硅基流动（GET /v1/user/info 取 totalBalance，官方文档核实；智谱/MiniMax 无公开余额接口，未加） |
 | GitHub 仓库 | ✅ `a1531307144-cell/cc-switch-local`（公开） |
 
-**对标 cc-switch 仍未做的**：余额查询扩面（需核实文档）、主进程报错双语化、更多工具（与「保持两个做精」拍板冲突）、提示词库/方案组/Skills（候选，未拍板）。
+**对标 cc-switch 仍未做的**：主进程报错双语化、更多工具（与「保持两个做精」拍板冲突）、Skills 管理/Responses 协议转换/OAuth 账号（候选，未拍板）。
 
 ## 3. 技术栈与架构
 

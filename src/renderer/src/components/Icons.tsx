@@ -76,6 +76,25 @@ export function IconRows() {
   )
 }
 
+export function IconNote() {
+  return (
+    <svg {...base}>
+      <path d="M3.2 2.8h9.6v10.4H3.2z" />
+      <path d="M5.5 5.6h5M5.5 8h5M5.5 10.4h3" />
+    </svg>
+  )
+}
+
+export function IconLayers() {
+  return (
+    <svg {...base}>
+      <path d="m8 1.8 6 3.2-6 3.2-6-3.2z" />
+      <path d="m2 8.4 6 3.2 6-3.2" />
+      <path d="m2 11.4 6 3.2 6-3.2" />
+    </svg>
+  )
+}
+
 export function IconBook() {
   return (
     <svg {...base}>

@@ -77,6 +77,14 @@ const RULES: { match: string; vendor: VendorInfo }[] = [
     vendor: { id: 'hunyuan', name: '腾讯混元', letter: '混', color: '#0052D9', icon: 'tencenthy' }
   },
   {
+    match: 'api.siliconflow.cn',
+    vendor: { id: 'siliconflow', name: '硅基流动 SiliconFlow', letter: '硅', color: '#6366F1' }
+  },
+  {
+    match: 'api.siliconflow.com',
+    vendor: { id: 'siliconflow', name: '硅基流动 SiliconFlow', letter: '硅', color: '#6366F1' }
+  },
+  {
     match: 'api.openai.com',
     vendor: { id: 'openai', name: 'OpenAI', letter: 'O', color: '#10A37F' }
   },

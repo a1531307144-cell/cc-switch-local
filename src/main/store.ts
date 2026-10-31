@@ -3,7 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import crypto from 'node:crypto'
-import type { AppSettings, Provider, StoreShape, ToolId } from '../shared/types'
+import type { AppSettings, Provider, ProviderGroup, StoreShape, StoredPrompt, ToolId } from '../shared/types'
 
 const TOOL_IDS: ToolId[] = ['claude', 'codex']
 const KEY_TYPES = ['auth_token', 'api_key']
@@ -75,6 +75,47 @@ const DEFAULT_SETTINGS: AppSettings = {
   router: { claude: false, codex: false }
 }
 
+const PROMPT_NAME_MAX = 100
+const PROMPT_CONTENT_MAX = 100_000
+
+/** 提示词条目清洗（v0.8.9）：坏条目丢弃，不影响其余数据 */
+function sanitizePrompt(raw: unknown): StoredPrompt | null {
+  if (!raw || typeof raw !== 'object') return null
+  const p = raw as Record<string, unknown>
+  if (typeof p.id !== 'string' || !p.id || p.id.length > 64) return null
+  if (p.tool !== 'claude' && p.tool !== 'codex') return null
+  if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > PROMPT_NAME_MAX) return null
+  if (typeof p.content !== 'string' || p.content.length > PROMPT_CONTENT_MAX) return null
+  const now = Date.now()
+  return {
+    id: p.id,
+    tool: p.tool,
+    name: p.name.trim(),
+    content: p.content,
+    createdAt: typeof p.createdAt === 'number' && Number.isFinite(p.createdAt) ? p.createdAt : now,
+    updatedAt: typeof p.updatedAt === 'number' && Number.isFinite(p.updatedAt) ? p.updatedAt : now
+  }
+}
+
+/** 方案组清洗（v0.8.9）：成员 id 在此不校验存在性（供应商可能先删），应用时跳过缺失项 */
+function sanitizeGroup(raw: unknown): ProviderGroup | null {
+  if (!raw || typeof raw !== 'object') return null
+  const g = raw as Record<string, unknown>
+  if (typeof g.id !== 'string' || !g.id || g.id.length > 64) return null
+  if (typeof g.name !== 'string' || !g.name.trim() || g.name.length > PROMPT_NAME_MAX) return null
+  const m = g.members as Record<string, unknown> | undefined
+  if (!m || typeof m !== 'object') return null
+  const member = (v: unknown): string | null => (typeof v === 'string' && v && v.length <= 64 ? v : null)
+  const now = Date.now()
+  return {
+    id: g.id,
+    name: g.name.trim(),
+    members: { claude: member(m.claude), codex: member(m.codex) },
+    createdAt: typeof g.createdAt === 'number' && Number.isFinite(g.createdAt) ? g.createdAt : now,
+    updatedAt: typeof g.updatedAt === 'number' && Number.isFinite(g.updatedAt) ? g.updatedAt : now
+  }
+}
+
 /**
  * 数据目录解析顺序：
  *   1. CCS_DATA_DIR 环境变量（自测/隔离用）
@@ -104,6 +145,8 @@ function normalizeParsed(parsed: Partial<StoreShape>): StoreShape {
           .map(sanitizeProviderRecord)
           .filter((p): p is Provider => p !== null)
       : [],
+    ...(Array.isArray(parsed.prompts) ? { prompts: parsed.prompts.map(sanitizePrompt).filter((p): p is StoredPrompt => p !== null) } : {}),
+    ...(Array.isArray(parsed.groups) ? { groups: parsed.groups.map(sanitizeGroup).filter((g): g is ProviderGroup => g !== null) } : {}),
     settings: {
       ...DEFAULT_SETTINGS,
       ...(parsed.settings ?? {}),

@@ -13,6 +13,8 @@ import { fetchBalance } from './balance'
 import { cloneProvider, reorderProviders, validateSettingsPatch, recordBalance } from './library'
 import { listSessions, readSession, exportSessionMd } from './sessions'
 import { getAgentVersions, upgradeAgent, cancelUpgrade } from './agentVersion'
+import { listPrompts, savePrompt, deletePrompt, applyPrompt, importCurrentPrompt, currentPromptFiles } from './prompts'
+import { listGroups, saveGroup, deleteGroup, applyGroup } from './groups'
 import { mcpDelete, mcpList, mcpSave } from './mcp'
 import { clearAppData } from './cleardata'
 import { findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
@@ -372,6 +374,43 @@ function registerIpc(): void {
     assertTool(tool)
     if (typeof file !== 'string' || file.length > 2000) throw new Error('非法的会话文件路径')
     return exportSessionMd(tool, file)
+  })
+
+  // ── 提示词库（v0.8.9） ──
+  ipcMain.handle('prompts:list', async () => {
+    return { prompts: listPrompts(), current: await currentPromptFiles() }
+  })
+
+  ipcMain.handle('prompts:save', (_e, input) => savePrompt(input))
+
+  ipcMain.handle('prompts:delete', (_e, id: string) => {
+    if (typeof id !== 'string' || id.length > 64) throw new Error('非法的 id')
+    return deletePrompt(id)
+  })
+
+  ipcMain.handle('prompts:apply', (_e, id: string) => {
+    if (typeof id !== 'string' || id.length > 64) throw new Error('非法的 id')
+    return applyPrompt(id)
+  })
+
+  ipcMain.handle('prompts:importCurrent', (_e, tool: ToolId) => {
+    assertTool(tool)
+    return importCurrentPrompt(tool)
+  })
+
+  // ── 方案组（v0.8.9） ──
+  ipcMain.handle('groups:list', () => listGroups())
+
+  ipcMain.handle('groups:save', (_e, input) => saveGroup(input))
+
+  ipcMain.handle('groups:delete', (_e, id: string) => {
+    if (typeof id !== 'string' || id.length > 64) throw new Error('非法的 id')
+    return deleteGroup(id)
+  })
+
+  ipcMain.handle('groups:apply', (_e, id: string) => {
+    if (typeof id !== 'string' || id.length > 64) throw new Error('非法的 id')
+    return applyGroup(id)
   })
 
   ipcMain.handle('mcp:list', (_e, tool: ToolId) => mcpList(tool))

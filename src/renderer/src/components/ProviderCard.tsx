@@ -60,8 +60,9 @@ export default function ProviderCard({
   const [balance, setBalance] = useState<BalanceResult | null>(null)
   const [checking, setChecking] = useState(false)
   const vendor = detectVendor(provider.baseUrl)
-  // 余额查询只对有官方余额接口的三家显示（不把 Key 发给第三方）
-  const balanceAvailable = vendor?.id === 'deepseek' || vendor?.id === 'moonshot' || vendor?.id === 'openrouter'
+  // 余额查询只对有官方余额接口的四家显示（不把 Key 发给第三方）
+  const balanceAvailable =
+    vendor?.id === 'deepseek' || vendor?.id === 'moonshot' || vendor?.id === 'openrouter' || vendor?.id === 'siliconflow'
 
   /** 最后一行卡片下方空间不足时菜单向上弹，避免被主画布裁剪（2026-10-31 审计 #11） */
   const toggleMenu = (e: MouseEvent<HTMLButtonElement>) => {

@@ -935,6 +935,60 @@ code {
   word-break: break-all;
 }
 
+/* 提示词库（v0.8.9）：列表复用 sessions 布局，右侧为编辑器 */
+.prompt-list-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.prompt-name-input {
+  width: 100%;
+}
+
+.prompt-content {
+  width: 100%;
+  min-height: 320px;
+  resize: vertical;
+  font-family: var(--mono, 'Consolas', monospace);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.badge-inuse {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+:root[data-theme='dark'] .badge-inuse {
+  color: #10120f;
+}
+
+/* 方案组（v0.8.9） */
+.group-save .group-name-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.group-card .group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.group-card h3 {
+  margin: 0;
+}
+
 .sess-entry {
   border-radius: var(--r-s);
   padding: 10px 14px;

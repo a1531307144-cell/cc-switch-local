@@ -9,11 +9,13 @@ import ProviderForm, { emptyDraft, type FormDraft } from './components/ProviderF
 import SettingsPanel from './components/SettingsPanel'
 import SessionsView from './components/SessionsView'
 import McpView from './components/McpView'
+import PromptsView from './components/PromptsView'
+import GroupsView from './components/GroupsView'
 import UsageDashboard from './components/UsageDashboard'
-import { IconBook, IconChart, IconChevronLeft, IconChevronRight, IconGear, IconGrid, IconLock, IconPlug, IconRows, IconSearch } from './components/Icons'
+import { IconBook, IconChart, IconChevronLeft, IconChevronRight, IconGear, IconGrid, IconLayers, IconLock, IconNote, IconPlug, IconRows, IconSearch } from './components/Icons'
 import logoUrl from './assets/logo.png'
 
-type View = ToolId | 'usage' | 'settings' | 'sessions' | 'mcp'
+type View = ToolId | 'usage' | 'settings' | 'sessions' | 'mcp' | 'prompts' | 'groups'
 
 /** 主密码解锁屏（锁定态下渲染层只显示这个） */
 function UnlockScreen({ lang, onUnlocked }: { lang: Lang; onUnlocked: () => void }) {
@@ -501,6 +503,24 @@ export default function App() {
           </button>
           <button
             type="button"
+            className={`nav icon${view === 'prompts' ? ' active' : ''}`}
+            onClick={() => setView('prompts')}
+            title={collapsed ? tr('side.prompts') : undefined}
+          >
+            <IconNote />
+            {!collapsed && <span>{tr('side.prompts')}</span>}
+          </button>
+          <button
+            type="button"
+            className={`nav icon${view === 'groups' ? ' active' : ''}`}
+            onClick={() => setView('groups')}
+            title={collapsed ? tr('side.groups') : undefined}
+          >
+            <IconLayers />
+            {!collapsed && <span>{tr('side.groups')}</span>}
+          </button>
+          <button
+            type="button"
             className={`nav icon${view === 'usage' ? ' active' : ''}`}
             onClick={() => setView('usage')}
             title={collapsed ? tr('side.usage') : undefined}
@@ -758,6 +778,8 @@ export default function App() {
           )}
           {view === 'sessions' && <SessionsView lang={lang} notify={notify} />}
           {view === 'mcp' && <McpView lang={lang} notify={notify} />}
+          {view === 'prompts' && <PromptsView lang={lang} notify={notify} />}
+          {view === 'groups' && <GroupsView lang={lang} notify={notify} onChanged={() => void refresh()} />}
           {view === 'usage' && <UsageDashboard lang={lang} notify={notify} />}
           {view === 'settings' && (
             <SettingsPanel store={store} lang={lang} onChanged={refresh} notify={notify} onCheckUpdate={runCheck} updateChecking={updateState === 'checking'} />

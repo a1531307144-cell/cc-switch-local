@@ -90,6 +90,10 @@ export interface StoreShape {
   current: Record<ToolId, string | null>
   providers: Provider[]
   settings: AppSettings
+  /** 提示词库（v0.8.9 起；缺省空） */
+  prompts?: StoredPrompt[]
+  /** 方案组（v0.8.9 起；缺省空） */
+  groups?: ProviderGroup[]
   /** 主密码加密已启用且尚未解锁（渲染层据此显示解锁屏） */
   locked?: true
 }
@@ -188,6 +192,36 @@ export interface SessionPage {
 }
 
 // ─── MCP 服务器管理 ───
+
+/** 工具当前的全局提示词文件状态（v0.8.9） */
+export interface CurrentPromptFile {
+  path: string
+  exists: boolean
+  content: string
+  mtime: number
+}
+
+/** 提示词库条目（v0.8.9）：应用到工具的全局提示词文件（CLAUDE.md / AGENTS.md） */
+export interface StoredPrompt {
+  id: string
+  tool: ToolId
+  /** 1-100 字符 */
+  name: string
+  /** ≤ 100_000 字符 */
+  content: string
+  createdAt: number
+  updatedAt: number
+}
+
+/** 方案组（v0.8.9）：一键切换整套供应商组合；成员为 null 表示该工具恢复官方配置 */
+export interface ProviderGroup {
+  id: string
+  /** 1-100 字符 */
+  name: string
+  members: { claude: string | null; codex: string | null }
+  createdAt: number
+  updatedAt: number
+}
 
 /** CLI 工具（Claude Code / Codex）版本信息（v0.8.8） */
 export interface AgentVersionInfo {
@@ -298,6 +332,17 @@ export interface Api {
   onAgentUpgradeProgress(cb: (p: { tool: ToolId; line: string }) => void): () => void
   /** 会话导出为 Markdown 文件（v0.8.8，主进程弹保存对话框） */
   sessionsExportMd(tool: ToolId, file: string): Promise<{ savedTo?: string; canceled?: boolean; error?: string }>
+  /** 提示词库（v0.8.9）：管理并应用到 CLAUDE.md / AGENTS.md */
+  promptsList(): Promise<{ prompts: StoredPrompt[]; current: { claude: CurrentPromptFile; codex: CurrentPromptFile } }>
+  promptsSave(input: { id?: string; tool: ToolId; name: string; content: string }): Promise<StoredPrompt>
+  promptsDelete(id: string): Promise<boolean>
+  promptsApply(id: string): Promise<{ claude?: boolean; codex?: boolean }>
+  promptsImportCurrent(tool: ToolId): Promise<StoredPrompt>
+  /** 方案组（v0.8.9）：一键切换整套供应商组合 */
+  groupsList(): Promise<ProviderGroup[]>
+  groupsSave(input: { id?: string; name: string; members: { claude: string | null; codex: string | null } }): Promise<ProviderGroup>
+  groupsDelete(id: string): Promise<boolean>
+  groupsApply(id: string): Promise<{ switched: ToolId[]; skipped: string[] }>
   clearAllData(): Promise<{ removed: string[] }>
   onDeeplinkProvider(cb: (r: DeeplinkResult) => void): () => void
   /** 拉取并清除主进程缓存的一条深链（冷启动推送竞态的兜底，v0.8.7）；无则返回 null */
