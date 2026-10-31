@@ -22,6 +22,8 @@ export interface Provider {
   /** codex 专用：自定义 provider 的 wire_api */
   wireApi?: 'responses' | 'chat'
   notes?: string
+  /** 最近一次余额查询结果（v0.8.8 起，点卡片「余额」时持久化；ok 才上卡面） */
+  lastBalance?: { ok: boolean; balance: number; currency?: string; checkedAt: number }
   createdAt: number
   updatedAt: number
 }
@@ -187,6 +189,23 @@ export interface SessionPage {
 
 // ─── MCP 服务器管理 ───
 
+/** CLI 工具（Claude Code / Codex）版本信息（v0.8.8） */
+export interface AgentVersionInfo {
+  tool: ToolId
+  /** npm 包名 */
+  pkg: string
+  /** 本机检测到的已装版本；null = PATH 上找不到该命令 */
+  installed: string | null
+  /** npm registry 上的最新版本；null = 查询失败或 npm 不可用 */
+  latest: string | null
+  npmFound: boolean
+  /** CLI 可执行文件路径（用于判断是否 npm 全局安装） */
+  binPath: string | null
+  /** true = npm 全局安装（可一键升级）；false = 原生/其他方式安装 */
+  managed: boolean
+  error?: string
+}
+
 export interface McpServerSpec {
   name: string
   command: string
@@ -270,6 +289,15 @@ export interface Api {
   /** 聚合模式开关（仅 claude 路由）：开启后按模型名前缀「别名/模型」分发 */
   routerSetAggregate(tool: ToolId, enabled: boolean): Promise<RouterStatus>
   balanceGet(input: { baseUrl: string; apiKey: string }): Promise<BalanceResult>
+  /** 余额查询结果持久化到供应商（v0.8.8，卡面角标用） */
+  providerSetBalance(id: string, result: { ok: boolean; balance: number; currency?: string; checkedAt: number }): Promise<boolean>
+  /** CLI 工具（Claude Code / Codex）版本检测与升级（v0.8.8） */
+  agentVersionGet(): Promise<{ claude: AgentVersionInfo; codex: AgentVersionInfo }>
+  agentVersionUpgrade(tool: ToolId): Promise<{ ok: boolean; message: string }>
+  agentVersionCancel(tool: ToolId): Promise<{ ok: boolean }>
+  onAgentUpgradeProgress(cb: (p: { tool: ToolId; line: string }) => void): () => void
+  /** 会话导出为 Markdown 文件（v0.8.8，主进程弹保存对话框） */
+  sessionsExportMd(tool: ToolId, file: string): Promise<{ savedTo?: string; canceled?: boolean; error?: string }>
   clearAllData(): Promise<{ removed: string[] }>
   onDeeplinkProvider(cb: (r: DeeplinkResult) => void): () => void
   /** 拉取并清除主进程缓存的一条深链（冷启动推送竞态的兜底，v0.8.7）；无则返回 null */

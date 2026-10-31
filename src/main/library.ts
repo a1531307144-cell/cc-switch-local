@@ -38,8 +38,7 @@ export function validateSettingsPatch(patch: Partial<AppSettings>): void {
   }
 }
 
-/** 克隆供应商：复制全部字段，新 id，名称加「副本」后缀，插在原条目之后 */
-export async function cloneProvider(id: string): Promise<Provider> {
+/** 克隆供应商：复制全部字段，新 id，名称加「副本」后缀，插在原条目之后 */export async function cloneProvider(id: string): Promise<Provider> {
   if (typeof id !== 'string' || !id || id.length > 64) throw new Error('非法的 id')
   const store = loadStore()
   const idx = store.providers.findIndex((p) => p.id === id)
@@ -75,5 +74,30 @@ export async function reorderProviders(tool: ToolId, orderedIds: string[]): Prom
   const next = orderedIds.map((id) => byId.get(id)!)
   let k = 0
   store.providers = store.providers.map((p) => (p.tool === tool ? next[k++] : p))
+  await saveStore(store)
+}
+
+/** 余额查询结果持久化（v0.8.8 卡面角标）：结果形状主进程校验，不信任渲染层 */
+export async function recordBalance(
+  id: string,
+  result: { ok: boolean; balance: number; currency?: string; checkedAt: number }
+): Promise<void> {
+  if (typeof id !== 'string' || !id || id.length > 64) throw new Error('非法的 id')
+  if (!result || typeof result !== 'object') throw new Error('非法的余额结果')
+  if (typeof result.ok !== 'boolean') throw new Error('非法的余额结果')
+  if (typeof result.balance !== 'number' || !Number.isFinite(result.balance)) throw new Error('非法的余额数值')
+  if (result.currency !== undefined && (typeof result.currency !== 'string' || result.currency.length > 8)) {
+    throw new Error('非法的币种')
+  }
+  if (typeof result.checkedAt !== 'number' || !Number.isFinite(result.checkedAt)) throw new Error('非法的查询时间')
+  const store = loadStore()
+  const p = store.providers.find((x) => x.id === id)
+  if (!p) throw new Error('供应商不存在')
+  p.lastBalance = {
+    ok: result.ok,
+    balance: result.balance,
+    ...(result.currency ? { currency: result.currency } : {}),
+    checkedAt: result.checkedAt
+  }
   await saveStore(store)
 }

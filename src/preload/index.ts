@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { Api, AppSettings, DeeplinkResult, McpServerSpec, ProviderInput, TestInput, ToolId } from '../shared/types'
 
+
 const api: Api = {
   storeGet: () => ipcRenderer.invoke('store:get'),
   providerSave: (input: ProviderInput) => ipcRenderer.invoke('provider:save', input),
@@ -31,6 +32,17 @@ const api: Api = {
   routerSet: (tool: ToolId, enabled: boolean) => ipcRenderer.invoke('router:set', tool, enabled),
   routerSetAggregate: (tool: ToolId, enabled: boolean) => ipcRenderer.invoke('router:setAggregate', tool, enabled),
   balanceGet: (input: { baseUrl: string; apiKey: string }) => ipcRenderer.invoke('balance:get', input),
+  providerSetBalance: (id: string, result: { ok: boolean; balance: number; currency?: string; checkedAt: number }) =>
+    ipcRenderer.invoke('provider:setBalance', id, result),
+  agentVersionGet: () => ipcRenderer.invoke('agentVersion:get'),
+  agentVersionUpgrade: (tool: ToolId) => ipcRenderer.invoke('agentVersion:upgrade', tool),
+  agentVersionCancel: (tool: ToolId) => ipcRenderer.invoke('agentVersion:cancel', tool),
+  onAgentUpgradeProgress: (cb: (p: { tool: ToolId; line: string }) => void) => {
+    const l = (_e: unknown, p: { tool: ToolId; line: string }) => cb(p)
+    ipcRenderer.on('agentUpgrade:progress', l)
+    return () => ipcRenderer.removeListener('agentUpgrade:progress', l)
+  },
+  sessionsExportMd: (tool: ToolId, file: string) => ipcRenderer.invoke('sessions:exportMd', tool, file),
   clearAllData: () => ipcRenderer.invoke('data:clearAll'),
   onDeeplinkProvider: (cb: (r: DeeplinkResult) => void) => {
     const l = (_e: unknown, r: DeeplinkResult) => cb(r)

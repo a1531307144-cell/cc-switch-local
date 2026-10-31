@@ -29,6 +29,25 @@ export function sanitizeProviderRecord(raw: unknown): Provider | null {
   if (p.alias !== undefined && (typeof p.alias !== 'string' || (p.alias !== '' && !ALIAS_RE.test(p.alias)))) return null
   if (p.model !== undefined && (typeof p.model !== 'string' || p.model.length > 200)) return null
   if (p.notes !== undefined && (typeof p.notes !== 'string' || p.notes.length > 2000)) return null
+  // lastBalance（v0.8.8）：形状非法整体丢弃该字段，不影响记录本身
+  let lastBalance: Provider['lastBalance'] | undefined
+  if (p.lastBalance !== undefined) {
+    const lb = p.lastBalance as Record<string, unknown>
+    if (
+      lb && typeof lb === 'object' &&
+      typeof lb.ok === 'boolean' &&
+      typeof lb.balance === 'number' && Number.isFinite(lb.balance) &&
+      (lb.currency === undefined || (typeof lb.currency === 'string' && lb.currency.length <= 8)) &&
+      typeof lb.checkedAt === 'number' && Number.isFinite(lb.checkedAt)
+    ) {
+      lastBalance = {
+        ok: lb.ok,
+        balance: lb.balance,
+        ...(typeof lb.currency === 'string' ? { currency: lb.currency } : {}),
+        checkedAt: lb.checkedAt
+      }
+    }
+  }
   const now = Date.now()
   return {
     id: typeof p.id === 'string' && p.id && p.id.length <= 64 ? p.id : crypto.randomUUID(),
@@ -42,6 +61,7 @@ export function sanitizeProviderRecord(raw: unknown): Provider | null {
     model: typeof p.model === 'string' && p.model ? p.model : undefined,
     wireApi: p.wireApi === 'chat' ? 'chat' : p.wireApi === 'responses' ? 'responses' : undefined,
     notes: typeof p.notes === 'string' && p.notes ? p.notes : undefined,
+    ...(lastBalance ? { lastBalance } : {}),
     createdAt: typeof p.createdAt === 'number' && Number.isFinite(p.createdAt) ? p.createdAt : now,
     updatedAt: typeof p.updatedAt === 'number' && Number.isFinite(p.updatedAt) ? p.updatedAt : now
   }

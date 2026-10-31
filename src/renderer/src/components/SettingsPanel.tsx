@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import type { AppSettings, BackupInfo, RouterStatus, StoreShape, ToolId } from '../../../shared/types'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { AgentVersionInfo, AppSettings, BackupInfo, RouterStatus, StoreShape, ToolId } from '../../../shared/types'
 import { t, type Lang } from '../../../shared/i18n'
+import { compareVersions } from '../../../shared/version'
 import { Dropdown, Modal } from './ui'
 
 function fmtDate(ms: number): string {
@@ -90,6 +91,56 @@ export default function SettingsPanel({
   const [masterPass, setMasterPass] = useState('')
   const [masterPass2, setMasterPass2] = useState('')
   const [masterBusy, setMasterBusy] = useState(false)
+  const [agentVersions, setAgentVersions] = useState<{ claude: AgentVersionInfo; codex: AgentVersionInfo } | null>(null)
+  const [cliChecking, setCliChecking] = useState(false)
+  const [upgradingTool, setUpgradingTool] = useState<ToolId | null>(null)
+  const [upgradeLines, setUpgradeLines] = useState<string[]>([])
+  const upgradingRef = useRef<ToolId | null>(null)
+
+  const loadAgentVersions = useCallback(async () => {
+    setCliChecking(true)
+    try {
+      setAgentVersions(await window.api.agentVersionGet())
+    } catch (e) {
+      notify((e as Error).message, 'err')
+    } finally {
+      setCliChecking(false)
+    }
+  }, [notify])
+
+  useEffect(() => {
+    void loadAgentVersions()
+  }, [loadAgentVersions])
+
+  useEffect(() => {
+    const un = window.api.onAgentUpgradeProgress(({ tool, line }) => {
+      if (upgradingRef.current !== tool) return
+      setUpgradeLines((prev) => [...prev.slice(-200), line])
+    })
+    return un
+  }, [])
+
+  const runUpgrade = async (tool: ToolId): Promise<void> => {
+    const label = tool === 'claude' ? 'Claude Code' : 'Codex'
+    if (!window.confirm(t(lang, 'set.cli.upgrade') + ' — ' + label + '？')) return
+    upgradingRef.current = tool
+    setUpgradingTool(tool)
+    setUpgradeLines([])
+    try {
+      const r = await window.api.agentVersionUpgrade(tool)
+      if (r.ok) {
+        notify(t(lang, 'set.cli.doneToast', { tool: label }))
+        await loadAgentVersions()
+      } else {
+        notify(t(lang, 'set.cli.failToast', { tool: label, msg: r.message }), 'err')
+      }
+    } catch (e) {
+      notify(t(lang, 'set.cli.failToast', { tool: label, msg: (e as Error).message }), 'err')
+    } finally {
+      upgradingRef.current = null
+      setUpgradingTool(null)
+    }
+  }
 
   const loadBackups = async () => {
     setBackups({
@@ -298,6 +349,59 @@ export default function SettingsPanel({
           <span className="muted">{t(lang, 'set.currentVersion', { v: version || '…' })}</span>
         </div>
         <p className="muted small">{t(lang, 'set.updateHint')}</p>
+      </section>
+
+      <section className="card">
+        <h3>{t(lang, 'set.cli')}</h3>
+        <p className="muted small">{t(lang, 'set.cliDesc')}</p>
+        {(['claude', 'codex'] as ToolId[]).map((tool) => {
+          const info = agentVersions?.[tool]
+          const label = tool === 'claude' ? 'Claude Code' : 'Codex'
+          const canUpgrade =
+            !!info && info.managed && info.npmFound && !!info.installed && !!info.latest && compareVersions(info.installed, info.latest) < 0
+          let status: { text: string; cls: string; tip?: string }
+          if (!info || cliChecking) status = { text: t(lang, 'set.cli.checking'), cls: 'muted small' }
+          else if (!info.npmFound) status = { text: t(lang, 'set.cli.npmMissing'), cls: 'muted small' }
+          else if (!info.managed && info.installed) status = { text: t(lang, 'set.cli.notNpm'), cls: 'muted small' }
+          else if (canUpgrade) status = { text: t(lang, 'set.cli.canUpgrade', { v: info.latest ?? '' }), cls: 'ok small' }
+          else if (info.installed && info.latest) status = { text: t(lang, 'set.cli.upToDate'), cls: 'muted small' }
+          else status = { text: t(lang, 'set.cli.latestFail'), cls: 'muted small', tip: (info.error ?? '').slice(0, 200) }
+          return (
+            <div className="cli-row" key={tool}>
+              <div className="cli-info">
+                <strong>{label}</strong>
+                <span className="muted small">
+                  {info?.installed
+                    ? t(lang, 'set.cli.installed', { v: info.installed })
+                    : cliChecking || !info
+                      ? t(lang, 'set.cli.checking')
+                      : t(lang, 'set.cli.notInstalled')}
+                  {info?.latest ? ` · ${t(lang, 'set.cli.latest', { v: info.latest })}` : ''}
+                </span>
+                <span className={status.cls} title={status.tip}>{status.text}</span>
+              </div>
+              <div className="btn-row">
+                <button className="btn sm" onClick={() => void loadAgentVersions()} disabled={cliChecking || upgradingTool !== null}>
+                  {t(lang, 'set.cli.check')}
+                </button>
+                <button
+                  className="btn primary sm"
+                  onClick={() => void runUpgrade(tool)}
+                  disabled={!canUpgrade || upgradingTool !== null || cliChecking}
+                  title={canUpgrade ? `${info?.installed} → ${info?.latest}` : undefined}
+                >
+                  {upgradingTool === tool ? t(lang, 'set.cli.upgrading') : t(lang, 'set.cli.upgrade')}
+                </button>
+                {upgradingTool === tool && (
+                  <button className="btn sm" onClick={() => void window.api.agentVersionCancel(tool)}>
+                    {t(lang, 'set.cli.cancel')}
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+        {upgradingTool && upgradeLines.length > 0 && <pre className="cli-log">{upgradeLines.slice(-30).join('\n')}</pre>}
       </section>
 
       <section className="card">

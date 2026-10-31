@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
+import { app, dialog } from 'electron'
 import { homeDir } from './claude'
 import type { SessionEntry, SessionInfo, SessionPage, ToolId } from '../shared/types'
 
@@ -174,4 +175,58 @@ async function readCodexSession(file: string): Promise<SessionPage> {
 export async function readSession(tool: ToolId, file: string): Promise<SessionPage> {
   assertInsideRoot(tool, file)
   return tool === 'claude' ? readClaudeSession(file) : readCodexSession(file)
+}
+
+// ─── Markdown 导出（v0.8.8） ───
+
+/** 会话页 → Markdown 文本（纯函数，自测直接覆盖） */
+export function buildSessionMarkdown(info: { tool: ToolId; project: string; id: string }, page: SessionPage): string {
+  const roleLabel = (e: SessionEntry): string =>
+    e.role === 'user' ? '🙋 用户' : e.role === 'assistant' ? '🤖 助手' : `🔧 工具${e.toolName ? ` · ${e.toolName}` : ' 结果'}`
+  const parts: string[] = [
+    `# 会话 ${info.id}`,
+    '',
+    `- 工具：${info.tool === 'claude' ? 'Claude Code' : 'Codex'}`,
+    `- 项目：${info.project}`,
+    `- 导出自：CC Switch Local 会话阅读器`,
+    '',
+    '---',
+    ''
+  ]
+  for (const e of page.entries) {
+    parts.push(`### ${roleLabel(e)}`, '', e.text.trim(), '')
+    if (e.ts) parts.push(`<sub>${new Date(e.ts).toLocaleString()}</sub>`, '')
+  }
+  if (page.truncated) parts.push('> 注：原会话过长，仅导出前 ' + page.entries.length + ' 条。', '')
+  return parts.join('\n')
+}
+
+/** 导出会话为 .md：主进程弹保存对话框；file 校验同 readSession */
+export async function exportSessionMd(tool: ToolId, file: string): Promise<{ savedTo?: string; canceled?: boolean; error?: string }> {
+  try {
+    assertInsideRoot(tool, file)
+    const page = await readSession(tool, file)
+    const id = path.basename(file).replace(/\.jsonl$/, '')
+    const project = path.relative(path.resolve(rootOf(tool)), path.dirname(path.resolve(file))) || 'root'
+    const md = buildSessionMarkdown({ tool, project, id }, page)
+    const r = await dialog.showSaveDialog({
+      title: '导出会话为 Markdown',
+      defaultPath: path.join(appDocuments(), `${project}-${id}.md`.replace(/[\\/:*?"<>|]/g, '_')),
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+      properties: ['showOverwriteConfirmation']
+    })
+    if (r.canceled || !r.filePath) return { canceled: true }
+    await fsp.writeFile(r.filePath, md, 'utf8')
+    return { savedTo: r.filePath }
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
+}
+
+function appDocuments(): string {
+  try {
+    return app.getPath('documents')
+  } catch {
+    return homeDir()
+  }
 }

@@ -748,6 +748,7 @@ export default function App() {
                         onClone={clone}
                         onDelete={del}
                         onNotify={notify}
+                        onDataChanged={() => void refresh()}
                       />
                     ))}
                   </div>

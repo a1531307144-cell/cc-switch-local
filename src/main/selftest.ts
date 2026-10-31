@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
 import { loadStore, newId, saveStore, storeFile, setMasterPassword, unlockMaster, clearMasterPassword, lockForTest } from './store'
+import { compareVersions } from '../shared/version'
 import * as claude from './claude'
 import * as codex from './codex'
 import { importFromCcSwitch } from './importer'
@@ -11,12 +12,12 @@ import { usageStats } from './usage'
 import { fetchBalance, balanceSupported } from './balance'
 import { buildProviderDeeplink, findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
 import { clearAppData } from './cleardata'
-import { cloneProvider, reorderProviders, validateSettingsPatch } from './library'
+import { cloneProvider, reorderProviders, validateSettingsPatch, recordBalance } from './library'
 import { switchProviderForTool } from './switcher'
 import { routerPort, routerStatus, startRouter, stopRouter, resetBreakerForTest } from './router'
 import { detectVendor } from '../shared/vendors'
 import { aggregateAliasOf, resolveAggregatePrefix } from '../shared/aggregate'
-import { listSessions, readSession } from './sessions'
+import { listSessions, readSession, buildSessionMarkdown } from './sessions'
 import { mcpDelete, mcpList, mcpSave } from './mcp'
 import http from 'node:http'
 
@@ -1195,6 +1196,57 @@ export async function runSelfTest(): Promise<void> {
         rejected2 = true
       }
       assert(rejected2, '带 .. 的路径必须拒绝')
+    })
+
+    await step('会话导出：Markdown 构建包含角色与正文（v0.8.8）', async () => {
+      const list = await listSessions('claude')
+      const target = list.find((s) => s.file.includes('session-1.jsonl'))
+      assert(!!target, '目标会话应存在')
+      const page = await readSession('claude', target!.file)
+      const md = buildSessionMarkdown({ tool: 'claude', project: target!.project, id: target!.id }, page)
+      assert(md.includes('# 会话'), '标题应包含会话 id')
+      assert(md.includes('🙋 用户') && md.includes('hi'), '用户条目应在导出中')
+      assert(md.includes('🤖 助手'), '助手条目应在导出中')
+    })
+
+    await step('余额持久化：合法结果入库、非法结果拒绝、加载时形状校验（v0.8.8）', async () => {
+      const s = loadStore()
+      const target = s.providers.find((p) => p.tool === 'claude')
+      assert(!!target, '应有 claude 供应商')
+      await recordBalance(target!.id, { ok: true, balance: 12.34, currency: 'CNY', checkedAt: Date.now() })
+      const reloaded = loadStore()
+      const withBalance = reloaded.providers.find((p) => p.id === target!.id)
+      assert(withBalance?.lastBalance?.ok === true && withBalance.lastBalance.balance === 12.34, '余额应持久化')
+      // 非法形状拒绝
+      let rejected = false
+      try {
+        await recordBalance(target!.id, { ok: 'yes' as never, balance: 1, checkedAt: Date.now() })
+      } catch {
+        rejected = true
+      }
+      assert(rejected, '非法 ok 类型应拒绝')
+      let rejected2 = false
+      try {
+        await recordBalance('nonexistent-id', { ok: true, balance: 1, checkedAt: Date.now() })
+      } catch {
+        rejected2 = true
+      }
+      assert(rejected2, '不存在的供应商应拒绝')
+      // 加载防线：手改损坏的 lastBalance 被丢弃
+      const raw = JSON.parse(await fsp.readFile(storeFile(), 'utf8')) as { providers: { id: string; lastBalance?: unknown }[] }
+      const rec = raw.providers.find((p) => p.id === target!.id)
+      rec!.lastBalance = { ok: 'hacked', balance: 'x' }
+      await fsp.writeFile(storeFile(), JSON.stringify(raw), 'utf8')
+      const reloaded2 = loadStore()
+      assert(reloaded2.providers.find((p) => p.id === target!.id)?.lastBalance === undefined, '损坏的 lastBalance 应被丢弃')
+    })
+
+    await step('版本比较：compareVersions 语义（v0.8.8）', async () => {
+      assert(compareVersions('1.2.3', '1.2.3') === 0, '相等版本应为 0')
+      assert(compareVersions('1.2.3', '1.2.10') < 0, '1.2.3 < 1.2.10')
+      assert(compareVersions('2.0.0', '1.9.9') > 0, '2.0.0 > 1.9.9')
+      assert(compareVersions('1.0.0-beta', '1.0.0') <= 0, '带后缀的串按数字主版本比较')
+      assert(compareVersions('not-a-version', '1.0.0') < 0, '解析失败按 0 处理')
     })
 
     await step('MCP 管理：claude.json 手术编辑 + codex TOML 段 + 删除 + 非法名拒绝', async () => {

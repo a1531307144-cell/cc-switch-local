@@ -106,6 +106,12 @@ export const STRINGS = {
   'sess.assistant': { zh: '助手', en: 'Assistant' },
   'sess.empty': { zh: '（无文本内容）', en: '(no text content)' },
   'sess.toolUse': { zh: '工具调用', en: 'Tool call' },
+  'sess.searchPh': { zh: '在当前会话中搜索…', en: 'Search in this session…' },
+  'sess.filtered': { zh: '匹配 {n} / {total} 条', en: '{n} / {total} entries match' },
+  'sess.export': { zh: '导出 Markdown', en: 'Export Markdown' },
+  'sess.exported': { zh: '已导出到 {path}', en: 'Exported to {path}' },
+  'sess.exportFail': { zh: '导出失败：{msg}', en: 'Export failed: {msg}' },
+  'sess.resume': { zh: '恢复此会话的命令', en: 'Command to resume this session' },
   'sess.toolResult': { zh: '工具结果', en: 'Tool result' },
 
   // ── MCP 服务器 ──
@@ -196,6 +202,11 @@ export const STRINGS = {
   'card.balance': { zh: '余额', en: 'Balance' },
   'card.balanceChecking': { zh: '查询中…', en: 'Checking…' },
   'card.balanceShow': { zh: '余额 {balance} {currency}', en: 'Balance {balance} {currency}' },
+  'card.balanceCached': { zh: '≈ {balance} {currency}', en: '≈ {balance} {currency}' },
+  'card.balanceCachedTip': {
+    zh: '上次查询于 {time}（点「⋯ → 余额」刷新）',
+    en: 'Last checked {time} (refresh via ⋯ → Balance)'
+  },
   'card.copyLink': { zh: '复制导入链接', en: 'Copy import link' },
   'card.linkCopied': { zh: '已复制导入链接（不含 Key）', en: 'Import link copied (no key included)' },
   'test.ok': { zh: '✓ 连通正常 · {ms}ms', en: '✓ OK · {ms}ms' },
@@ -302,8 +313,33 @@ export const STRINGS = {
     zh: '发现新版本时页面顶部会出现下载横幅，下载完成后一键重启安装；网络不畅时会提供发布页链接手动下载。',
     en: 'New versions show a banner at the top; one click to download and install. If GitHub is unreachable, a link to the releases page is provided.'
   },
-  'set.router': { zh: '本机路由', en: 'Local router' },
-  'set.routerDesc': {
+  // ── CLI 工具版本管理（v0.8.8） ──
+  'set.cli': { zh: 'CLI 工具', en: 'CLI tools' },
+  'set.cliDesc': {
+    zh: '检测本机 Claude Code / Codex 的版本，npm 全局安装的可一键升级到最新版（纯本机操作，不涉及任何供应商数据）。升级前请关闭正在运行的对应 CLI。',
+    en: "Detect installed versions of Claude Code / Codex and upgrade npm-installed ones in one click (local only, no provider data involved). Close the running CLI before upgrading."
+  },
+  'set.cli.installed': { zh: '已装 {v}', en: 'installed {v}' },
+  'set.cli.notInstalled': { zh: '未检测到（可能未安装或不在 PATH）', en: 'not detected (not installed or not on PATH)' },
+  'set.cli.latest': { zh: '最新 {v}', en: 'latest {v}' },
+  'set.cli.latestFail': { zh: '最新版查询失败', en: 'failed to query latest' },
+  'set.cli.upToDate': { zh: '已是最新', en: 'up to date' },
+  'set.cli.canUpgrade': { zh: '可升级到 {v}', en: 'upgrade to {v} available' },
+  'set.cli.notNpm': {
+    zh: '非 npm 安装（原生安装），请用其自带方式升级（如 claude update）',
+    en: 'Not npm-managed (native install) — upgrade with its own updater (e.g. claude update)'
+  },
+  'set.cli.npmMissing': { zh: 'npm 不可用，无法检测/升级（未装 Node.js 或不在 PATH）', en: 'npm unavailable — cannot detect/upgrade (Node.js missing or not on PATH)' },
+  'set.cli.check': { zh: '检查版本', en: 'Check versions' },
+  'set.cli.checking': { zh: '检测中…', en: 'Checking…' },
+  'set.cli.upgrade': { zh: '一键升级', en: 'Upgrade' },
+  'set.cli.upgrading': { zh: '升级中…', en: 'Upgrading…' },
+  'set.cli.cancel': { zh: '取消', en: 'Cancel' },
+  'set.cli.doneToast': { zh: '{tool} 已升级到最新版', en: '{tool} upgraded to latest' },
+  'set.cli.failToast': { zh: '{tool} 升级失败：{msg}', en: '{tool} upgrade failed: {msg}' },
+  'set.cli.unknown': { zh: '未知', en: 'unknown' },
+
+  'set.router': { zh: '本机路由', en: 'Local router' },  'set.routerDesc': {
     zh: '在工具页用「本机路由」开关开启。开启后请求经 127.0.0.1 代理转发：切换供应商即时生效，上游故障（5xx / 429 / 连接失败）时按列表顺序自动转移——转移会在下一家重发同一请求，极端情况下可能重复计费。支持协议转换：接口协议为「OpenAI 兼容」的 Claude 供应商自动经路由转换（Anthropic↔OpenAI，含流式与工具调用），使用时会自动开启路由。',
     en: 'Toggle per tool on its page. Requests go through a 127.0.0.1 proxy: provider switches apply instantly; upstream failures (5xx / 429 / connection errors) fail over in list order — the same request is resent to the next provider, which may cause duplicate billing in rare cases. Protocol conversion is supported: Claude providers with the "OpenAI-compatible" protocol are converted through the router (Anthropic↔OpenAI, incl. streaming and tool calls); the router starts automatically when such a provider is enabled.'
   },

@@ -32,7 +32,8 @@ export default function ProviderCard({
   onEdit,
   onClone,
   onDelete,
-  onNotify
+  onNotify,
+  onDataChanged
 }: {
   provider: Provider
   lang: Lang
@@ -49,6 +50,8 @@ export default function ProviderCard({
   onClone: (p: Provider) => void
   onDelete: (p: Provider) => void
   onNotify: (text: string, kind?: 'ok' | 'err') => void
+  /** 余额查询持久化后通知父级刷新（v0.8.8） */
+  onDataChanged: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [dropUp, setDropUp] = useState(false)
@@ -92,7 +95,15 @@ export default function ProviderCard({
     setChecking(true)
     setResult(null)
     try {
-      setBalance(await window.api.balanceGet({ baseUrl: provider.baseUrl, apiKey: provider.apiKey }))
+      const r = await window.api.balanceGet({ baseUrl: provider.baseUrl, apiKey: provider.apiKey })
+      setBalance(r)
+      if (r.ok) {
+        // 持久化到供应商，卡面常显角标（v0.8.8）
+        await window.api
+          .providerSetBalance(provider.id, { ok: true, balance: r.balance ?? 0, currency: r.currency, checkedAt: Date.now() })
+          .catch(() => {})
+        onDataChanged()
+      }
     } catch (e) {
       setBalance({ ok: false, message: (e as Error).message })
     } finally {
@@ -144,6 +155,14 @@ export default function ProviderCard({
           {provider.name}
         </div>
         {vendor && <div className="pcard-sub">{vendor.name}</div>}
+        {provider.lastBalance?.ok && !note && (
+          <span
+            className="pcard-balance"
+            title={t(lang, 'card.balanceCachedTip', { time: new Date(provider.lastBalance.checkedAt).toLocaleString() })}
+          >
+            {t(lang, 'card.balanceCached', { balance: provider.lastBalance.balance, currency: provider.lastBalance.currency ?? '' })}
+          </span>
+        )}
         {note && (
           <button type="button" className={`pcard-note ${note.cls}`} title={note.text} onClick={() => { setResult(null); setBalance(null) }}>
             {note.text}

@@ -567,9 +567,27 @@ code {
   text-overflow: ellipsis;
 }
 
+/* 缓存的余额角标（v0.8.8）：比结果胶囊更低调的常显小签 */
+.pcard-balance {
+  margin-top: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  background: var(--accent-soft);
+  color: var(--accent);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.as-list .pcard-balance {
+  align-self: flex-start;
+}
+
 /* 测试/余额结果：卡内小胶囊，点击关闭 */
-.pcard-note {
-  margin-top: 7px;
+.pcard-note {  margin-top: 7px;
   max-width: calc(100% - 4px);
   font-size: 10.5px;
   line-height: 1.5;
@@ -860,6 +878,61 @@ code {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* 会话工具条：搜索 + resume 命令 + 导出（v0.8.8） */
+.sess-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.sess-toolbar .search {
+  flex: 1;
+  min-width: 160px;
+}
+
+.sess-toolbar code {
+  font-size: 11px;
+}
+
+.cli-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.cli-row .ok {
+  color: var(--ok-ink);
+}
+
+.cli-row:first-of-type {
+  border-top: none;
+}
+
+.cli-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cli-log {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: var(--chip);
+  border-radius: var(--r-s);
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .sess-entry {

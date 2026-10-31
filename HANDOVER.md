@@ -14,18 +14,17 @@
 - 用户的核心诉求是**安全性**：API Key 全部存本机、代码开源可审计、零遥测零上传。任何"把数据传出去"的功能都与项目定位冲突，不要加。
 - 对标 farion1231/cc-switch（v4.0.21 起为功能参照物）。2026-10-30 用户拍板「功能实现完全相似」为目标分多版走：v0.6.0 交付预设库 / 关键字段写入 / 用量统计 / 本机路由最简版 / 托盘 / 加密备份；**协议转换与聚合模式、MCP、多工具支持、云同步（决定不做，用加密备份文件替代）见 §9**。
 
-## 2. 当前状态（2026-10-31：v0.8.7 路由熔断 + 阶段审查修复包）
+## 2. 当前状态（2026-10-31：v0.8.8 CLI 版本管理 + 余额上卡面 + 会话增强）
 
 | 项 | 状态 |
 | --- | --- |
 | TypeScript 类型检查 | ✅ 通过 |
-| 端到端自测（39 步断言） | ✅ 39/39 通过（新增熔断器、损坏隔离两步） |
-| CDP 实机验证 | ✅ v0.8.7 共 9/9：冷启动深链预填（take 兜底）、CSP 注入且页面正常、聚合开启联动路由开关并持久化、重启后路由自动拉起（含 aggregate 条件） |
-| 审查修复（2026-10-31 第二轮审查） | ✅ P1 聚合/路由重启断连（routerSetAggregate 同步置 claude=true + 启动判断含 aggregate + 解锁后补拉路由）；P2 主密码锁定态 createTray 中断 whenReady（try/catch 兜底）；P3 nativeTheme 锁定态未捕获异常（try/catch）；P4 损坏 providers.json 静默重置（改名隔离 .corrupt-*）；P5 渲染层 CSP（构建期 meta 注入，dev 跳过）；P6 codex MCP 写入 CRLF→LF（保留原 EOL）；P7 解除主密码顺序（先明文库后删 master.json，saveStorePlain 走同一写队列）；P8 master.json 原子写；P9 provider:delete 验参；P10 provider:test 入参校验；P11 冷启动深链竞态（deeplink:take 5 分钟 TTL 兜底） |
-| 新功能（v0.8.7） | ✅ **路由熔断器**：连续 3 次失败（连接错误/5xx/429）冷却 5 分钟，故障转移跳过冷却中的家；全部冷却时 fail-open 保留原链；resetBreakerForTest 供自测 |
+| 端到端自测（42 步断言） | ✅ 42/42 通过（新增会话导出构建、余额持久化、版本比较三步） |
+| CDP 实机验证 | ✅ v0.8.8 共 8/8：余额角标+tooltip、会话 resume 命令/搜索过滤/导出按钮、设置页 CLI 区真机检测（Claude Code 2.1.312→2.1.316 可升级、Codex 0.165.0→0.166.0 可升级） |
+| 新功能（v0.8.8） | ✅ **CLI 工具版本管理**（agentVersion.ts：npm 探测 ProgramFiles 优先+中性 cwd 防坏 shim、`npm view` 查新、一键 `install -g` 流式输出可取消、原生安装检测提示自带升级）；**余额上卡面**（recordBalance 持久化 lastBalance 到 Provider，sanitize 形状校验，.pcard-balance 角标）；**会话增强**（sess-toolbar 搜索过滤、buildSessionMarkdown+exportSessionMd 导出、resume 命令复制） |
 | GitHub 仓库 | ✅ `a1531307144-cell/cc-switch-local`（公开） |
 
-**对标 cc-switch 仍未做的**：余额查询扩面（需核实文档）、主进程报错双语化、更多工具（与「保持两个做精」拍板冲突）；进行中：Agent 版本管理 v1、余额上卡面、会话阅读器增强（搜索/导出/resume）→ v0.8.8。
+**对标 cc-switch 仍未做的**：余额查询扩面（需核实文档）、主进程报错双语化、更多工具（与「保持两个做精」拍板冲突）、提示词库/方案组/Skills（候选，未拍板）。
 
 ## 3. 技术栈与架构
 
@@ -45,6 +44,7 @@ src/
     usage.ts             # 用量统计：扫描会话日志（Claude projects / Codex sessions），增量缓存按 mtime+size，成本按单价表估算
     sessions.ts          # 会话阅读器（v0.8.5）：列出/解析会话日志为只读条目；file 参数必须位于会话根内（防穿越）
     mcp.ts               # MCP 管理（v0.8.5）编排：入参校验后分别写 claude.json 顶层 mcpServers / codex [mcp_servers.NAME] 段
+    agentVersion.ts      # CLI 工具版本管理（v0.8.8）：npm 探测/查新/一键升级（spawn 均中性 cwd，命令串纯常量无注入面）
     master（在 store.ts）# 主密码加密（v0.8.5）：master.json 存 salt+verifier，库整文件 AES-256-GCM；锁定态 loadStore 抛 LOCKED
     backup.ts            # 加密备份：AES-256-GCM（scrypt 派生），导出/导入 .ccslbak，Key 不出机
     tray.ts              # 系统托盘：快切菜单 + 关窗驻留（close→hide，before-quit 才真退）

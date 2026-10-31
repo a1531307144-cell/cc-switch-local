@@ -10,8 +10,9 @@ import { backupExport, backupImport } from './backup'
 import { usageStats } from './usage'
 import { routerStatus, startRouter, stopRouter } from './router'
 import { fetchBalance } from './balance'
-import { cloneProvider, reorderProviders, validateSettingsPatch } from './library'
-import { listSessions, readSession } from './sessions'
+import { cloneProvider, reorderProviders, validateSettingsPatch, recordBalance } from './library'
+import { listSessions, readSession, exportSessionMd } from './sessions'
+import { getAgentVersions, upgradeAgent, cancelUpgrade } from './agentVersion'
 import { mcpDelete, mcpList, mcpSave } from './mcp'
 import { clearAppData } from './cleardata'
 import { findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
@@ -367,6 +368,12 @@ function registerIpc(): void {
     return readSession(tool, file)
   })
 
+  ipcMain.handle('sessions:exportMd', (_e, tool: ToolId, file: string) => {
+    assertTool(tool)
+    if (typeof file !== 'string' || file.length > 2000) throw new Error('非法的会话文件路径')
+    return exportSessionMd(tool, file)
+  })
+
   ipcMain.handle('mcp:list', (_e, tool: ToolId) => mcpList(tool))
 
   ipcMain.handle('mcp:save', (_e, tool: ToolId, spec) => mcpSave(tool, spec))
@@ -381,6 +388,29 @@ function registerIpc(): void {
     }
     if (!isStr(input.apiKey) || !input.apiKey || input.apiKey.length > 4000) throw new Error('非法的 API Key')
     return fetchBalance(input.baseUrl, input.apiKey)
+  })
+
+  ipcMain.handle('provider:setBalance', (_e, id: string, result) => {
+    void recordBalance(id, result)
+    return true
+  })
+
+  // ── CLI 工具版本管理（v0.8.8） ──
+  ipcMain.handle('agentVersion:get', () => getAgentVersions())
+
+  ipcMain.handle('agentVersion:upgrade', async (e, tool: ToolId) => {
+    assertTool(tool)
+    if (!win || win.isDestroyed()) throw new Error('主窗口不可用')
+    const wc = e.sender
+    const r = await upgradeAgent(tool, (line) => {
+      if (!wc.isDestroyed()) wc.send('agentUpgrade:progress', { tool, line })
+    })
+    return r
+  })
+
+  ipcMain.handle('agentVersion:cancel', (_e, tool: ToolId) => {
+    assertTool(tool)
+    return { ok: cancelUpgrade(tool) }
   })
 
   ipcMain.handle('data:clearAll', async () => {
