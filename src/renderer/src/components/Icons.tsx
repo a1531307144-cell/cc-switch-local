@@ -95,6 +95,15 @@ export function IconLayers() {
   )
 }
 
+export function IconCube() {
+  return (
+    <svg {...base}>
+      <path d="M8 1.8 14 5v6l-6 3.2L2 11V5z" />
+      <path d="M2 5l6 3.2L14 5M8 8.2v6" />
+    </svg>
+  )
+}
+
 export function IconBook() {
   return (
     <svg {...base}>

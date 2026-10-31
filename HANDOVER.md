@@ -14,17 +14,17 @@
 - 用户的核心诉求是**安全性**：API Key 全部存本机、代码开源可审计、零遥测零上传。任何"把数据传出去"的功能都与项目定位冲突，不要加。
 - 对标 farion1231/cc-switch（v4.0.21 起为功能参照物）。2026-10-30 用户拍板「功能实现完全相似」为目标分多版走：v0.6.0 交付预设库 / 关键字段写入 / 用量统计 / 本机路由最简版 / 托盘 / 加密备份；**协议转换与聚合模式、MCP、多工具支持、云同步（决定不做，用加密备份文件替代）见 §9**。
 
-## 2. 当前状态（2026-10-31：v0.8.9 提示词库 + 方案组 + 余额扩面）
+## 2. 当前状态（2026-10-31：v0.8.10 Skills 管理 + Responses 协议转换）
 
 | 项 | 状态 |
 | --- | --- |
 | TypeScript 类型检查 | ✅ 通过 |
-| 端到端自测（44 步断言） | ✅ 44/44 通过（新增提示词库全链路、方案组应用、SiliconFlow 余额解析） |
-| CDP 实机验证 | ✅ v0.8.9 共 8/8：SiliconFlow 字母徽章、提示词新建→应用→使用中徽章→CLAUDE.md 真实写入、方案组保存→成员解析→应用提示、侧栏新入口 |
-| 新功能（v0.8.9） | ✅ **提示词库**（prompts.ts + PromptsView：store.prompts 白名单清洗，应用到 ~/.claude/CLAUDE.md / ~/.codex/AGENTS.md 带 backupFile，使用中=去尾换行内容比对，导入当前文件）；**方案组**（groups.ts + GroupsView：store.groups，applyGroup 逐工具走 switchProviderForTool，与当前一致跳过、缺失成员 skip 不算错）；**余额扩面**：+硅基流动（GET /v1/user/info 取 totalBalance，官方文档核实；智谱/MiniMax 无公开余额接口，未加） |
+| 端到端自测（46 步断言） | ✅ 46/46 通过（新增 Skills zip 安装全链路、Responses 纯函数 + 路由 /responses 全链路） |
+| CDP 实机验证 | ✅ v0.8.10 共 6/6：Skills 列表/查看/删除按钮、openai 协议报文格式下拉（默认 Chat Completions、可切 Responses API） |
+| 新功能（v0.8.10） | ✅ **Skills 管理**（skills.ts + SkillsView：GitHub codeload 安装（main→master 回退）+ 本地 zip（系统 bsdtar 解压，System32 优先防 GNU tar 误接，拷贝跳符号链接防 zip 越界），来源记录 .ccsl-source.json 供更新重装，frontmatter 命名+重名去重；skills.sh 无公开 API 不做搜索）；**Responses 协议转换**（convert.ts anthropicToResponses/responsesToAnthropic/pumpResponsesToAnthropic + router 按 provider.wireApi='responses' 打 /responses，含流式与工具调用；表单 claude+openai 协议出报文格式下拉，默认 chat） |
 | GitHub 仓库 | ✅ `a1531307144-cell/cc-switch-local`（公开） |
 
-**对标 cc-switch 仍未做的**：主进程报错双语化、更多工具（与「保持两个做精」拍板冲突）、Skills 管理/Responses 协议转换/OAuth 账号（候选，未拍板）。
+**对标 cc-switch 仍未做的**：主进程报错双语化、更多工具（与「保持两个做精」拍板冲突）、OAuth 账号（候选，未拍板）、skills.sh 市场搜索（无公开 API）。
 
 ## 3. 技术栈与架构
 

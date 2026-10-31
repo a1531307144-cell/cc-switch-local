@@ -53,6 +53,13 @@ const api: Api = {
     ipcRenderer.invoke('groups:save', input),
   groupsDelete: (id: string) => ipcRenderer.invoke('groups:delete', id),
   groupsApply: (id: string) => ipcRenderer.invoke('groups:apply', id),
+  skillsList: (tool: ToolId) => ipcRenderer.invoke('skills:list', tool),
+  skillsInstallGithub: (tool: ToolId, url: string) => ipcRenderer.invoke('skills:installGithub', tool, url),
+  skillsInstallZip: (tool: ToolId) => ipcRenderer.invoke('skills:installZip', tool),
+  skillsDelete: (tool: ToolId, name: string) => ipcRenderer.invoke('skills:delete', tool, name),
+  skillsUpdate: (tool: ToolId, name: string) => ipcRenderer.invoke('skills:update', tool, name),
+  skillsUpdateAll: (tool: ToolId) => ipcRenderer.invoke('skills:updateAll', tool),
+  skillsRead: (tool: ToolId, name: string) => ipcRenderer.invoke('skills:read', tool, name),
   clearAllData: () => ipcRenderer.invoke('data:clearAll'),
   onDeeplinkProvider: (cb: (r: DeeplinkResult) => void) => {
     const l = (_e: unknown, r: DeeplinkResult) => cb(r)

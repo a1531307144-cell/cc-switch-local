@@ -28,7 +28,7 @@ export function emptyDraft(tool: ToolId): FormDraft {
     protocol: 'anthropic',
     alias: '',
     model: '',
-    wireApi: 'responses',
+    wireApi: tool === 'codex' ? 'responses' : 'chat',
     notes: ''
   }
 }
@@ -209,6 +209,20 @@ export default function ProviderForm({
               {t(lang, 'form.modelClaude')}
               <input value={form.model} onChange={(e) => set({ model: e.target.value })} placeholder="claude-sonnet-4-5" />
             </label>
+            {form.protocol === 'openai' && (
+              <label>
+                {t(lang, 'form.wireApi')}
+                <Dropdown
+                  value={form.wireApi}
+                  options={[
+                    { value: 'chat', label: 'Chat Completions' },
+                    { value: 'responses', label: 'Responses API' }
+                  ]}
+                  onChange={(v) => set({ wireApi: v as 'responses' | 'chat' })}
+                />
+                <small>{t(lang, 'form.wireApiHint')}</small>
+              </label>
+            )}
             <label>
               {t(lang, 'form.alias')}
               <input

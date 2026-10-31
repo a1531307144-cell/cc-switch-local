@@ -15,6 +15,15 @@ import { listSessions, readSession, exportSessionMd } from './sessions'
 import { getAgentVersions, upgradeAgent, cancelUpgrade } from './agentVersion'
 import { listPrompts, savePrompt, deletePrompt, applyPrompt, importCurrentPrompt, currentPromptFiles } from './prompts'
 import { listGroups, saveGroup, deleteGroup, applyGroup } from './groups'
+import {
+  listSkills,
+  installFromGithub,
+  installFromZipDialog,
+  deleteSkill,
+  updateSkill,
+  updateAllSkills,
+  readSkill
+} from './skills'
 import { mcpDelete, mcpList, mcpSave } from './mcp'
 import { clearAppData } from './cleardata'
 import { findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
@@ -411,6 +420,43 @@ function registerIpc(): void {
   ipcMain.handle('groups:apply', (_e, id: string) => {
     if (typeof id !== 'string' || id.length > 64) throw new Error('非法的 id')
     return applyGroup(id)
+  })
+
+  // ── Skills 管理（v0.8.10） ──
+  ipcMain.handle('skills:list', (_e, tool: ToolId) => {
+    assertTool(tool)
+    return listSkills(tool)
+  })
+
+  ipcMain.handle('skills:installGithub', (_e, tool: ToolId, url: string) => {
+    assertTool(tool)
+    if (typeof url !== 'string' || url.length > 500) throw new Error('非法的仓库地址')
+    return installFromGithub(tool, url)
+  })
+
+  ipcMain.handle('skills:installZip', (_e, tool: ToolId) => {
+    assertTool(tool)
+    return installFromZipDialog(tool)
+  })
+
+  ipcMain.handle('skills:delete', (_e, tool: ToolId, name: string) => {
+    assertTool(tool)
+    return deleteSkill(tool, name)
+  })
+
+  ipcMain.handle('skills:update', (_e, tool: ToolId, name: string) => {
+    assertTool(tool)
+    return updateSkill(tool, name)
+  })
+
+  ipcMain.handle('skills:updateAll', (_e, tool: ToolId) => {
+    assertTool(tool)
+    return updateAllSkills(tool)
+  })
+
+  ipcMain.handle('skills:read', (_e, tool: ToolId, name: string) => {
+    assertTool(tool)
+    return readSkill(tool, name)
   })
 
   ipcMain.handle('mcp:list', (_e, tool: ToolId) => mcpList(tool))

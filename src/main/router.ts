@@ -2,7 +2,7 @@ import http from 'node:http'
 import { Readable } from 'node:stream'
 import { loadStore } from './store'
 import { resolveAggregatePrefix, aggregateAliasOf } from '../shared/aggregate'
-import { anthropicToOpenAI, estimateAnthropicTokens, openAIErrorToAnthropic, openAIToAnthropicResponse, pumpOpenAIToAnthropic } from './convert'
+import { anthropicToOpenAI, anthropicToResponses, estimateAnthropicTokens, openAIErrorToAnthropic, openAIToAnthropicResponse, pumpOpenAIToAnthropic, pumpResponsesToAnthropic, responsesToAnthropic } from './convert'
 import type { Provider, RouterStatus, ToolId } from '../shared/types'
 
 /**
@@ -287,7 +287,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         return
       }
       const oaBody = anthropicToOpenAI(anthropicBody, provider, aggregateHit?.model)
-      const upstream = provider.baseUrl.replace(/\/+$/, '') + '/chat/completions'
+      // Responses 报文格式（v0.8.10）：wireApi='responses' 的上游打 /responses 端点
+      const useResponses = provider.wireApi === 'responses'
+      const upstream = provider.baseUrl.replace(/\/+$/, '') + (useResponses ? '/responses' : '/chat/completions')
+      const upstreamBody = useResponses ? anthropicToResponses(anthropicBody, aggregateHit?.model) : oaBody
       try {
         const ac = new AbortController()
         const timer = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS)
@@ -296,7 +299,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
           r = await fetch(upstream, {
             method: 'POST',
             headers: { 'content-type': 'application/json', authorization: `Bearer ${provider.apiKey}` },
-            body: JSON.stringify(oaBody),
+            body: JSON.stringify(upstreamBody),
             signal: ac.signal
           })
         } finally {
@@ -320,12 +323,20 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
           res.end(JSON.stringify(openAIErrorToAnthropic(r.status, errText)))
           return
         }
-        if (oaBody.stream && r.body) {
-          await pumpOpenAIToAnthropic(
-            r.body as unknown as import('node:stream/web').ReadableStream<Uint8Array>,
-            res,
-            provider.model || 'gpt-4o-mini'
-          )
+        if (upstreamBody.stream && r.body) {
+          if (useResponses) {
+            await pumpResponsesToAnthropic(
+              r.body as unknown as import('node:stream/web').ReadableStream<Uint8Array>,
+              res,
+              provider.model || 'gpt-4o-mini'
+            )
+          } else {
+            await pumpOpenAIToAnthropic(
+              r.body as unknown as import('node:stream/web').ReadableStream<Uint8Array>,
+              res,
+              provider.model || 'gpt-4o-mini'
+            )
+          }
           return
         }
         const j = (await r.json().catch(() => null)) as Record<string, unknown> | null
@@ -337,7 +348,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
           'content-type': 'application/json',
           'x-ccsl-provider': encodeURIComponent(provider.name)
         })
-        res.end(JSON.stringify(openAIToAnthropicResponse(j, typeof anthropicBody.model === 'string' ? anthropicBody.model : '')))
+        const translated = useResponses
+          ? responsesToAnthropic(j, typeof anthropicBody.model === 'string' ? anthropicBody.model : '')
+          : openAIToAnthropicResponse(j, typeof anthropicBody.model === 'string' ? anthropicBody.model : '')
+        res.end(JSON.stringify(translated))
         return
       } catch (e) {
         attempts.push(`${provider.name}: ${(e as Error).message}`)

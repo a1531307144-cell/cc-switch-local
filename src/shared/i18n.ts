@@ -17,6 +17,7 @@ export const STRINGS = {
   'side.mcp': { zh: 'MCP 服务器', en: 'MCP servers' },
   'side.prompts': { zh: '提示词库', en: 'Prompts' },
   'side.groups': { zh: '方案组', en: 'Schemes' },
+  'side.skills': { zh: 'Skills', en: 'Skills' },
   'side.collapse': { zh: '收起侧栏', en: 'Collapse sidebar' },
   'side.expand': { zh: '展开侧栏', en: 'Expand sidebar' },
   'side.privacy1': { zh: '数据仅存本机 · 无遥测', en: 'Data stays local · no telemetry' },
@@ -92,6 +93,11 @@ export const STRINGS = {
   'form.aliasHint': {
     zh: '聚合模式下用「别名/模型」直达该供应商；仅限字母/数字/下划线/中划线。英文名称会自动推导，无需填写',
     en: 'Used as the "alias/model" prefix in aggregate mode; letters/digits/underscore/dash only. English names auto-derive one'
+  },
+  'form.wireApi': { zh: '报文格式（wire_api）', en: 'Wire format (wire_api)' },
+  'form.wireApiHint': {
+    zh: 'Chat Completions 是常规 OpenAI 兼容端点；Responses API 供只暴露 /responses 的上游（如 OpenAI 官方新模型）',
+    en: 'Chat Completions for regular OpenAI-compatible endpoints; Responses API for upstreams that only expose /responses (e.g. newer OpenAI models)'
   },
 
   // ── 会话阅读器 ──
@@ -183,6 +189,31 @@ export const STRINGS = {
   'group.saved': { zh: '方案组已保存', en: 'Scheme saved' },
   'group.deleted': { zh: '方案组已删除', en: 'Scheme deleted' },
   'group.needName': { zh: '请先填写方案组名称', en: 'Scheme name is required' },
+
+  // ── Skills 管理（v0.8.10） ──
+  'skill.title': { zh: 'Skills', en: 'Skills' },
+  'skill.desc': {
+    zh: '管理 Agent Skills（含 SKILL.md 的目录）：从 GitHub 仓库或本地 zip 安装到 Claude Code（~/.claude/skills）与 Codex（~/.codex/skills），安装记录来源后可一键更新。',
+    en: 'Manage Agent Skills (directories with SKILL.md): install from a GitHub repo or local zip into Claude Code (~/.claude/skills) and Codex (~/.codex/skills); installs record their source for one-click updates.'
+  },
+  'skill.urlPh': { zh: 'GitHub 仓库地址：owner/repo 或完整 URL（可带 /tree/分支）', en: 'GitHub repo: owner/repo or full URL (with /tree/branch)' },
+  'skill.installGithub': { zh: '从 GitHub 安装', en: 'Install from GitHub' },
+  'skill.installZip': { zh: '从 zip 安装', en: 'Install from zip' },
+  'skill.installing': { zh: '安装中…', en: 'Installing…' },
+  'skill.updating': { zh: '更新中…', en: 'Updating…' },
+  'skill.updateAll': { zh: '全部更新', en: 'Update all' },
+  'skill.update': { zh: '更新', en: 'Update' },
+  'skill.delete': { zh: '删除', en: 'Delete' },
+  'skill.dir': { zh: '安装目录：{dir}', en: 'Install directory: {dir}' },
+  'skill.none': { zh: '还没有安装任何 skill', en: 'No skills installed yet' },
+  'skill.pick': { zh: '从左侧选择一个 skill 查看其 SKILL.md', en: 'Pick a skill to view its SKILL.md' },
+  'skill.installed': { zh: '已安装：{n}', en: 'Installed: {n}' },
+  'skill.skipped': { zh: '部分跳过：{list}', en: 'Some skipped: {list}' },
+  'skill.updated': { zh: '已更新 {n} 个 skill', en: 'Updated {n} skill(s)' },
+  'skill.updateFailed': { zh: '更新失败：{list}', en: 'Update failed: {list}' },
+  'skill.noneToUpd': { zh: '没有可更新的（无 GitHub 来源的安装）', en: 'Nothing to update (no GitHub-sourced installs)' },
+  'skill.deleted': { zh: '已删除 {name}', en: 'Deleted {name}' },
+  'skill.confirmDelete': { zh: '确定删除 skill「{name}」吗？', en: 'Delete skill "{name}"?' },
   'mcp.editTitle': { zh: '编辑会覆盖同名服务器', en: 'Saving overwrites a server with the same name' },
   'mcp.err.args': { zh: '参数/环境变量格式有误（KEY=VALUE）', en: 'Invalid args/env format (KEY=VALUE)' },
   'mcp.deleteFail': { zh: '删除失败：{msg}', en: 'Delete failed: {msg}' },

@@ -989,6 +989,28 @@ code {
   margin: 0;
 }
 
+/* Skills（v0.8.10）：安装区 + 列表复用 sessions 布局 */
+.skill-install .group-name-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.badge-src {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.skill-md {
+  max-height: 480px;
+  overflow-y: auto;
+  background: var(--chip);
+  border-radius: var(--r-s);
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .sess-entry {
   border-radius: var(--r-s);
   padding: 10px 14px;

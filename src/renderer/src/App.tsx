@@ -9,13 +9,14 @@ import ProviderForm, { emptyDraft, type FormDraft } from './components/ProviderF
 import SettingsPanel from './components/SettingsPanel'
 import SessionsView from './components/SessionsView'
 import McpView from './components/McpView'
+import SkillsView from './components/SkillsView'
 import PromptsView from './components/PromptsView'
 import GroupsView from './components/GroupsView'
 import UsageDashboard from './components/UsageDashboard'
-import { IconBook, IconChart, IconChevronLeft, IconChevronRight, IconGear, IconGrid, IconLayers, IconLock, IconNote, IconPlug, IconRows, IconSearch } from './components/Icons'
+import { IconBook, IconChart, IconChevronLeft, IconChevronRight, IconCube, IconGear, IconGrid, IconLayers, IconLock, IconNote, IconPlug, IconRows, IconSearch } from './components/Icons'
 import logoUrl from './assets/logo.png'
 
-type View = ToolId | 'usage' | 'settings' | 'sessions' | 'mcp' | 'prompts' | 'groups'
+type View = ToolId | 'usage' | 'settings' | 'sessions' | 'mcp' | 'prompts' | 'groups' | 'skills'
 
 /** 主密码解锁屏（锁定态下渲染层只显示这个） */
 function UnlockScreen({ lang, onUnlocked }: { lang: Lang; onUnlocked: () => void }) {
@@ -132,7 +133,7 @@ export default function App() {
           keyType: r.input.keyType ?? 'auth_token',
           protocol: 'anthropic',
           model: r.input.model ?? '',
-          wireApi: r.input.wireApi ?? 'responses',
+          wireApi: r.input.wireApi ?? (r.input.tool === 'codex' ? 'responses' : 'chat'),
           notes: t(lang, 'form.deeplinkNote')
         })
         notify(t(lang, 'deeplink.okToast', { name: r.input.name }))
@@ -503,6 +504,15 @@ export default function App() {
           </button>
           <button
             type="button"
+            className={`nav icon${view === 'skills' ? ' active' : ''}`}
+            onClick={() => setView('skills')}
+            title={collapsed ? tr('side.skills') : undefined}
+          >
+            <IconCube />
+            {!collapsed && <span>{tr('side.skills')}</span>}
+          </button>
+          <button
+            type="button"
             className={`nav icon${view === 'prompts' ? ' active' : ''}`}
             onClick={() => setView('prompts')}
             title={collapsed ? tr('side.prompts') : undefined}
@@ -761,7 +771,7 @@ export default function App() {
                             protocol: x.tool === 'claude' ? x.protocol ?? 'anthropic' : 'anthropic',
                             alias: x.alias ?? '',
                             model: x.model ?? '',
-                            wireApi: x.wireApi ?? 'responses',
+                            wireApi: x.wireApi ?? (x.tool === 'codex' ? 'responses' : 'chat'),
                             notes: x.notes ?? ''
                           })
                         }
@@ -778,6 +788,7 @@ export default function App() {
           )}
           {view === 'sessions' && <SessionsView lang={lang} notify={notify} />}
           {view === 'mcp' && <McpView lang={lang} notify={notify} />}
+          {view === 'skills' && <SkillsView lang={lang} notify={notify} />}
           {view === 'prompts' && <PromptsView lang={lang} notify={notify} />}
           {view === 'groups' && <GroupsView lang={lang} notify={notify} onChanged={() => void refresh()} />}
           {view === 'usage' && <UsageDashboard lang={lang} notify={notify} />}

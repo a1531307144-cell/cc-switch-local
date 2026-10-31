@@ -19,7 +19,7 @@ export interface Provider {
   alias?: string
   /** 可选：codex 会写入 config.toml 的 model；claude 仅作测试请求的模型名 */
   model?: string
-  /** codex 专用：自定义 provider 的 wire_api */
+  /** OpenAI 兼容端点的报文格式：codex 写入 config.toml 的 wire_api；claude（protocol=openai）选择上游走 Chat Completions 或 Responses API（v0.8.10 起） */
   wireApi?: 'responses' | 'chat'
   notes?: string
   /** 最近一次余额查询结果（v0.8.8 起，点卡片「余额」时持久化；ok 才上卡面） */
@@ -193,6 +193,22 @@ export interface SessionPage {
 
 // ─── MCP 服务器管理 ───
 
+/** 已安装的 Skill（v0.8.10）：目录含 SKILL.md */
+export interface SkillInfo {
+  tool: ToolId
+  /** 目录名（即 skill id） */
+  name: string
+  /** SKILL.md frontmatter 的 description（缺失为空串） */
+  description: string
+  path: string
+  fileCount: number
+  size: number
+  /** 安装来源（GitHub 安装时记录，供「更新」重拉） */
+  source?: { repo: string; ref?: string; installedAt: number }
+}
+
+// ─── MCP 服务器管理 ───
+
 /** 工具当前的全局提示词文件状态（v0.8.9） */
 export interface CurrentPromptFile {
   path: string
@@ -343,6 +359,14 @@ export interface Api {
   groupsSave(input: { id?: string; name: string; members: { claude: string | null; codex: string | null } }): Promise<ProviderGroup>
   groupsDelete(id: string): Promise<boolean>
   groupsApply(id: string): Promise<{ switched: ToolId[]; skipped: string[] }>
+  /** Skills 管理（v0.8.10）：Claude（~/.claude/skills）与 Codex（~/.codex/skills） */
+  skillsList(tool: ToolId): Promise<SkillInfo[]>
+  skillsInstallGithub(tool: ToolId, url: string): Promise<{ installed: string[]; skipped: string[] }>
+  skillsInstallZip(tool: ToolId): Promise<{ installed: string[]; skipped: string[]; canceled?: boolean }>
+  skillsDelete(tool: ToolId, name: string): Promise<boolean>
+  skillsUpdate(tool: ToolId, name: string): Promise<{ installed: string[] }>
+  skillsUpdateAll(tool: ToolId): Promise<{ installed: string[]; failed: string[] }>
+  skillsRead(tool: ToolId, name: string): Promise<{ content: string }>
   clearAllData(): Promise<{ removed: string[] }>
   onDeeplinkProvider(cb: (r: DeeplinkResult) => void): () => void
   /** 拉取并清除主进程缓存的一条深链（冷启动推送竞态的兜底，v0.8.7）；无则返回 null */

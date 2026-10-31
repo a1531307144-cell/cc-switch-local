@@ -1,5 +1,6 @@
 import fsp from 'node:fs/promises'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { app } from 'electron'
 import { loadStore, newId, saveStore, storeFile, setMasterPassword, unlockMaster, clearMasterPassword, lockForTest } from './store'
@@ -20,8 +21,11 @@ import { aggregateAliasOf, resolveAggregatePrefix } from '../shared/aggregate'
 import { listSessions, readSession, buildSessionMarkdown } from './sessions'
 import { listPrompts, savePrompt, applyPrompt, deletePrompt, importCurrentPrompt, currentPromptFiles } from './prompts'
 import { listGroups, saveGroup, applyGroup, deleteGroup } from './groups'
+import { installFromGithub, listSkills, readSkill, deleteSkill, parseFrontmatter } from './skills'
+import { anthropicToResponses, responsesToAnthropic } from './convert'
 import { mcpDelete, mcpList, mcpSave } from './mcp'
 import http from 'node:http'
+import { execSync } from 'node:child_process'
 
 interface Check {
   name: string
@@ -1384,6 +1388,151 @@ export async function runSelfTest(): Promise<void> {
       await deleteGroup(g.id)
       await deleteGroup(g2.id)
       assert((await listGroups()).length === 0, '全部删除后应为空')
+    })
+
+    await step('Skills：zip 安装（frontmatter 命名）/列表/读取/删除 + 穿越拒绝（v0.8.10）', async () => {
+      const fm = parseFrontmatter('---\nname: demo-skill\ndescription: 演示技能\n---\n\n正文')
+      assert(fm.name === 'demo-skill' && fm.description === '演示技能', `frontmatter 解析：${JSON.stringify(fm)}`)
+      // 组装 zip（系统 tar 的 bsdtar 支持 zip 格式）
+      const srcDir = path.join(os.tmpdir(), `ccsl-st-${Date.now()}`)
+      await fsp.mkdir(path.join(srcDir, 'demo-skill', 'scripts'), { recursive: true })
+      await fsp.writeFile(path.join(srcDir, 'demo-skill', 'SKILL.md'), '---\nname: demo-skill\ndescription: 自测技能\n---\n\n# Demo\n执行演示。')
+      await fsp.writeFile(path.join(srcDir, 'demo-skill', 'scripts', 'run.py'), 'print("hi")')
+      const zipPath = path.join(srcDir, 'bundle.zip')
+      const tarExe = path.join(process.env.SystemRoot ?? 'C:/Windows', 'System32', 'tar.exe')
+      execSync(`"${tarExe}" -a -cf "${zipPath}" -C "${srcDir}" demo-skill`)
+      const zipBytes = await fsp.readFile(zipPath)
+      const mock = http.createServer((_req, res) => {
+        res.writeHead(200, { 'content-type': 'application/zip' })
+        res.end(zipBytes)
+      })
+      await new Promise<void>((r) => mock.listen(0, '127.0.0.1', () => r()))
+      const mockAddr = mock.address() as { port: number }
+      try {
+        const r = await installFromGithub('claude', 'https://github.com/demo/demo-skill', {
+          zipUrlOverride: `http://127.0.0.1:${mockAddr.port}/bundle.zip`
+        })
+        assert(r.installed.length === 1 && r.installed[0] === 'demo-skill', `安装应成功：${JSON.stringify(r)}`)
+        const list = await listSkills('claude')
+        const skill = list.find((s) => s.name === 'demo-skill')
+        assert(!!skill, '列表应含 demo-skill')
+        assert(skill!.description === '自测技能', `描述应来自 frontmatter：${skill!.description}`)
+        assert(skill!.source?.repo === 'demo/demo-skill', '应记录来源供更新')
+        assert(fs.existsSync(path.join(skill!.path, 'scripts', 'run.py')), '子目录文件应一并安装')
+        const content = await readSkill('claude', 'demo-skill')
+        assert(content.content.includes('# Demo'), '读取 SKILL.md 应返回正文')
+        const up = await installFromGithub('claude', 'https://github.com/demo/demo-skill/tree/main', {
+          zipUrlOverride: `http://127.0.0.1:${mockAddr.port}/bundle.zip`
+        })
+        assert(up.installed[0] === 'demo-skill', '更新（重装）应成功')
+        let rejected = false
+        try {
+          await deleteSkill('claude', '../evil')
+        } catch {
+          rejected = true
+        }
+        assert(rejected, '路径穿越名称必须拒绝')
+        await deleteSkill('claude', 'demo-skill')
+        assert(!(await listSkills('claude')).some((s) => s.name === 'demo-skill'), '删除后列表应为空')
+      } finally {
+        mock.close()
+        await fsp.rm(srcDir, { recursive: true, force: true }).catch(() => {})
+      }
+    })
+
+    await step('Responses 协议转换：请求/响应纯函数 + 路由 /responses 全链路（v0.8.10）', async () => {
+      const rb = anthropicToResponses({
+        system: '你是助手',
+        max_tokens: 100,
+        messages: [
+          { role: 'user', content: '查天气' },
+          { role: 'assistant', content: [{ type: 'tool_use', id: 'tu_1', name: 'get_weather', input: { city: '北京' } }] },
+          { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: '晴 25 度' }] }
+        ],
+        tools: [{ name: 'get_weather', description: '查天气', input_schema: { type: 'object', properties: {} } }]
+      })
+      assert(rb.instructions === '你是助手', 'system 应映射为 instructions')
+      assert(rb.store === false && rb.max_output_tokens === 100, 'store/max_output_tokens 应设置')
+      const callItem = rb.input.find((x) => x.type === 'function_call') as { call_id?: string; name?: string } | undefined
+      assert(!!callItem && callItem.call_id === 'tu_1' && callItem.name === 'get_weather', `tool_use 应映射 function_call：${JSON.stringify(callItem)}`)
+      const outItem = rb.input.find((x) => x.type === 'function_call_output') as { call_id?: string; output?: string } | undefined
+      assert(!!outItem && outItem.call_id === 'tu_1' && outItem.output === '晴 25 度', `tool_result 应映射 function_call_output：${JSON.stringify(outItem)}`)
+      assert(Array.isArray(rb.tools) && (rb.tools[0] as { name?: string }).name === 'get_weather', 'tools 应为扁平 function 定义')
+      const ta = responsesToAnthropic(
+        {
+          id: 'resp_1',
+          model: 'gpt-5.1',
+          status: 'completed',
+          output: [
+            { type: 'message', content: [{ type: 'output_text', text: '北京今天晴。' }] },
+            { type: 'function_call', call_id: 'call_x1', name: 'get_weather', arguments: '{"city":"北京"}' }
+          ],
+          usage: { input_tokens: 10, output_tokens: 5 }
+        },
+        'claude-sonnet-4-5'
+      )
+      assert(ta.stop_reason === 'tool_use' && ta.model === 'gpt-5.1', `stop_reason/model：${JSON.stringify(ta)}`)
+      const taUsage = ta.usage as { input_tokens: number; output_tokens: number }
+      assert(taUsage.input_tokens === 10 && taUsage.output_tokens === 5, 'usage 应映射')
+      const toolUse = (ta.content as { type: string; id?: string; input?: { city?: string } }[]).find((c) => c.type === 'tool_use')
+      assert(!!toolUse && toolUse.id === 'call_x1' && toolUse.input?.city === '北京', `function_call 应还原 tool_use：${JSON.stringify(toolUse)}`)
+      // 路由全链路：wireApi=responses 的 openai 供应商 → /responses mock
+      const hit: { url?: string; body?: string }[] = []
+      const up = http.createServer((req, res) => {
+        let b = ''
+        req.on('data', (c: Buffer) => (b += c))
+        req.on('end', () => {
+          hit.push({ url: req.url, body: b })
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(
+            JSON.stringify({
+              id: 'resp_r1',
+              model: 'gpt-5.1',
+              status: 'completed',
+              output: [{ type: 'message', content: [{ type: 'output_text', text: 'hello from responses' }] }],
+              usage: { input_tokens: 3, output_tokens: 4 }
+            })
+          )
+        })
+      })
+      await new Promise<void>((r) => up.listen(0, '127.0.0.1', () => r()))
+      const upAddr = up.address() as { port: number }
+      const s = loadStore()
+      const pResp = {
+        id: newId(),
+        tool: 'claude' as const,
+        name: 'Responses 家',
+        baseUrl: `http://127.0.0.1:${upAddr.port}`,
+        apiKey: 'sk-resp-0000000000001',
+        keyType: 'auth_token' as const,
+        protocol: 'openai' as const,
+        wireApi: 'responses' as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+      s.providers.push(pResp)
+      s.current.claude = pResp.id
+      await saveStore(s)
+      await startRouter()
+      try {
+        const r = await fetch(`http://127.0.0.1:${routerPort()}/claude/v1/messages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 50, messages: [{ role: 'user', content: 'hi' }] })
+        })
+        assert(r.status === 200, `路由应 200，实际 ${r.status}：${r.status === 200 ? '' : await r.text()}`)
+        assert(r.headers.get('x-ccsl-provider') === encodeURIComponent('Responses 家'), '应由 Responses 家服务')
+        assert(hit[0]?.url === '/responses', `应打 /responses 端点，实际 ${hit[0]?.url}`)
+        const sent = JSON.parse(hit[0]?.body ?? '{}') as { input?: unknown[]; store?: boolean }
+        assert(Array.isArray(sent.input) && (sent.input[0] as { role?: string }).role === 'user', `应发送 Responses input：${JSON.stringify(sent).slice(0, 200)}`)
+        assert(sent.store === false, 'store 应为 false')
+        const j = (await r.json()) as { content?: { type: string; text?: string }[]; usage?: { input_tokens?: number } }
+        assert(j.content?.[0]?.type === 'text' && j.content[0].text === 'hello from responses', `响应应还原 Anthropic 结构：${JSON.stringify(j)}`)
+        assert(j.usage?.input_tokens === 3, 'usage 应还原')
+      } finally {
+        stopRouter()
+        up.close()
+      }
     })
 
     await step('主密码加密：整文件加密/锁定/解锁/解除', async () => {

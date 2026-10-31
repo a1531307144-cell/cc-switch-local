@@ -233,6 +233,322 @@ export function openAIErrorToAnthropic(status: number, text: string): Record<str
   }
 }
 
+// ─── Responses API（v0.8.10）：Anthropic Messages ↔ OpenAI Responses ───
+// 供 wireApi='responses' 的 OpenAI 兼容供应商（只暴露 /responses 端点的上游）。
+
+interface ResponsesBody {
+  model: string
+  input: Record<string, unknown>[]
+  instructions?: string
+  max_output_tokens?: number
+  stream?: boolean
+  store?: false
+  tools?: unknown
+  tool_choice?: unknown
+}
+
+/** Anthropic Messages 请求体 → OpenAI Responses 请求体；条目按消息顺序展开（保证 function_call 先于 output） */
+export function anthropicToResponses(body: Record<string, unknown>, modelOverride?: string): ResponsesBody {
+  const out: ResponsesBody = {
+    model: modelOverride || (typeof body.model === 'string' ? body.model : 'gpt-4o-mini'),
+    input: [],
+    store: false
+  }
+  const sys = textPartsOf(body.system)
+  if (sys) out.instructions = sys
+  if (typeof body.max_tokens === 'number') out.max_output_tokens = body.max_tokens
+  const stream = body.stream === true
+  out.stream = stream
+
+  for (const msg of (Array.isArray(body.messages) ? body.messages : []) as { role?: unknown; content?: unknown }[]) {
+    const role = msg.role === 'assistant' ? 'assistant' : 'user'
+    const blocks = blocksOf(msg.content)
+    if (role === 'assistant') {
+      const text = textPartsOf(blocks)
+      if (text) out.input.push({ role: 'assistant', content: [{ type: 'output_text', text }] })
+      for (const b of blocks) {
+        if (b.type === 'tool_use' && typeof b.name === 'string') {
+          out.input.push({
+            type: 'function_call',
+            call_id: typeof b.id === 'string' && b.id ? b.id : `call_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`,
+            name: b.name,
+            arguments: JSON.stringify(b.input ?? {})
+          })
+        }
+      }
+    } else {
+      // user 块按原顺序：tool_result → function_call_output，文本/图片 → user 消息
+      const textParts: Record<string, unknown>[] = []
+      for (const b of blocks) {
+        if (b.type === 'tool_result') {
+          const inner = textPartsOf(b.content)
+          if (textParts.length) {
+            out.input.push({ role: 'user', content: textParts })
+            textParts.length = 0
+          }
+          out.input.push({
+            type: 'function_call_output',
+            call_id: typeof b.tool_use_id === 'string' ? b.tool_use_id : '',
+            output: b.is_error === true ? `ERROR: ${inner}` : inner
+          })
+        } else if (b.type === 'text' && typeof b.text === 'string') {
+          textParts.push({ type: 'input_text', text: b.text })
+        } else if (b.type === 'image' && b.source?.type === 'base64' && typeof b.source.data === 'string') {
+          textParts.push({ type: 'input_image', image_url: `data:${b.source.media_type ?? 'image/png'};base64,${b.source.data}` })
+        }
+      }
+      if (textParts.length) out.input.push({ role: 'user', content: textParts })
+    }
+  }
+
+  if (Array.isArray(body.tools) && body.tools.length) {
+    const tools = (body.tools as { name?: unknown; description?: unknown; input_schema?: unknown }[])
+      .filter((t) => typeof t.name === 'string')
+      .map((t) => ({
+        type: 'function' as const,
+        name: t.name as string,
+        description: typeof t.description === 'string' ? t.description : '',
+        parameters: (t.input_schema ?? { type: 'object', properties: {} }) as unknown,
+        strict: false
+      }))
+    if (tools.length) out.tools = tools
+  }
+  const tc = body.tool_choice as { type?: unknown; name?: unknown } | undefined
+  if (tc && typeof tc === 'object') {
+    if (tc.type === 'auto') out.tool_choice = 'auto'
+    else if (tc.type === 'any') out.tool_choice = 'required'
+    else if (tc.type === 'tool' && typeof tc.name === 'string') out.tool_choice = { type: 'function', name: tc.name }
+  }
+  return out
+}
+
+/** OpenAI Responses JSON 响应 → Anthropic Messages JSON 响应 */
+export function responsesToAnthropic(json: Record<string, unknown>, requestModel: string): Record<string, unknown> {
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+  const items = (Array.isArray(json.output) ? json.output : []) as {
+    type?: unknown
+    content?: { type?: unknown; text?: unknown }[]
+    call_id?: unknown
+    name?: unknown
+    arguments?: unknown
+  }[]
+  const usage = (json.usage ?? {}) as { input_tokens?: unknown; output_tokens?: unknown }
+  const content: Record<string, unknown>[] = []
+  let text = ''
+  const toolCalls: Record<string, unknown>[] = []
+  for (const item of items) {
+    if (item.type === 'message' && Array.isArray(item.content)) {
+      text += item.content
+        .filter((p) => p.type === 'output_text' && typeof p.text === 'string')
+        .map((p) => p.text)
+        .join('')
+    } else if (item.type === 'function_call' && typeof item.name === 'string') {
+      let input: unknown = {}
+      const args = typeof item.arguments === 'string' ? item.arguments : ''
+      try {
+        input = args ? JSON.parse(args) : {}
+      } catch {
+        input = { _raw: args }
+      }
+      toolCalls.push({
+        type: 'tool_use',
+        id: typeof item.call_id === 'string' && item.call_id ? item.call_id : `toolu_${crypto.randomUUID().slice(0, 8)}`,
+        name: item.name,
+        input
+      })
+    }
+  }
+  if (text) content.push({ type: 'text', text })
+  content.push(...toolCalls)
+  const status = json.status
+  const stopReason =
+    status === 'incomplete'
+      ? 'max_tokens'
+      : toolCalls.length > 0
+        ? 'tool_use'
+        : 'end_turn'
+  return {
+    id: typeof json.id === 'string' ? `msg_${json.id}` : `msg_${crypto.randomUUID()}`,
+    type: 'message',
+    role: 'assistant',
+    model: typeof json.model === 'string' ? json.model : requestModel,
+    content,
+    stop_reason: stopReason,
+    stop_sequence: null,
+    usage: { input_tokens: num(usage.input_tokens), output_tokens: num(usage.output_tokens) }
+  }
+}
+
+/** OpenAI Responses SSE → Anthropic SSE（流式状态机），与 pumpOpenAIToAnthropic 同一套事件骨架 */
+export async function pumpResponsesToAnthropic(
+  upstream: import('node:stream/web').ReadableStream<Uint8Array>,
+  res: ServerResponse,
+  fallbackModel: string
+): Promise<void> {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive'
+  })
+  const decoder = new TextDecoder()
+  const reader = upstream.getReader()
+  let buffer = ''
+  let started = false
+  let closed = false
+  let outIndex = 0
+  let textOpen = false
+  const tools = new Map<string, { outIndex: number; started: boolean }>()
+  let toolOpened = false
+
+  const sse = (event: string, data: unknown): void => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  }
+  const closeBlock = (index: number): void => {
+    sse('content_block_stop', { type: 'content_block_stop', index })
+  }
+  const finish = (stopReason: string, outputTokens: number): void => {
+    if (closed) return
+    closed = true
+    if (textOpen) {
+      closeBlock(outIndex)
+      textOpen = false
+    }
+    for (const t of tools.values()) if (t.started) closeBlock(t.outIndex)
+    sse('message_delta', {
+      type: 'message_delta',
+      delta: { stop_reason: stopReason, stop_sequence: null },
+      usage: { output_tokens: outputTokens }
+    })
+    sse('message_stop', { type: 'message_stop' })
+    res.end()
+  }
+  const openTool = (callId: string, name: string): { outIndex: number; started: boolean } => {
+    if (textOpen) {
+      closeBlock(outIndex)
+      textOpen = false
+    }
+    outIndex += 1
+    const t = { outIndex, started: true }
+    tools.set(callId, t)
+    toolOpened = true
+    sse('content_block_start', {
+      type: 'content_block_start',
+      index: t.outIndex,
+      content_block: { type: 'tool_use', id: callId, name: name || 'unknown_tool' }
+    })
+    return t
+  }
+
+  const handleEvent = (payload: string): void => {
+    if (closed || payload === '[DONE]') return
+    let j: {
+      type?: unknown
+      response?: Record<string, unknown>
+      item?: { type?: unknown; call_id?: unknown; name?: unknown }
+      delta?: unknown
+    }
+    try {
+      j = JSON.parse(payload)
+    } catch {
+      return
+    }
+    const type = typeof j.type === 'string' ? j.type : ''
+    if (type === 'response.created' && !started) {
+      started = true
+      const r = j.response ?? {}
+      const usage = (r.usage ?? {}) as { input_tokens?: unknown }
+      sse('message_start', {
+        type: 'message_start',
+        message: {
+          id: typeof r.id === 'string' ? `msg_${r.id}` : `msg_${crypto.randomUUID()}`,
+          type: 'message',
+          role: 'assistant',
+          model: typeof r.model === 'string' ? r.model : fallbackModel,
+          content: [],
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: typeof usage.input_tokens === 'number' ? usage.input_tokens : 0, output_tokens: 0 }
+        }
+      })
+      return
+    }
+    if (type === 'response.output_item.added' && j.item?.type === 'function_call') {
+      openTool(typeof j.item.call_id === 'string' && j.item.call_id ? j.item.call_id : `call_${crypto.randomUUID().slice(0, 8)}`, typeof j.item.name === 'string' ? j.item.name : '')
+      return
+    }
+    if (type === 'response.output_text.delta') {
+      const delta = typeof j.delta === 'string' ? j.delta : ''
+      if (!delta) return
+      if (!started) {
+        started = true
+        sse('message_start', {
+          type: 'message_start',
+          message: {
+            id: `msg_${crypto.randomUUID()}`,
+            type: 'message',
+            role: 'assistant',
+            model: fallbackModel,
+            content: [],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: { input_tokens: 0, output_tokens: 0 }
+          }
+        })
+      }
+      if (!textOpen) {
+        sse('content_block_start', { type: 'content_block_start', index: outIndex, content_block: { type: 'text', text: '' } })
+        textOpen = true
+      }
+      sse('content_block_delta', { type: 'content_block_delta', index: outIndex, delta: { type: 'text_delta', text: delta } })
+      return
+    }
+    if (type === 'response.function_call_arguments.delta') {
+      const delta = typeof j.delta === 'string' ? j.delta : ''
+      if (!delta) return
+      // item.added 事件已开块；个别上游不发 item.added 时按 call_id 兜底（找不到就开一个匿名块）
+      const callId = j.item && typeof j.item.call_id === 'string' ? j.item.call_id : ''
+      let t = callId ? tools.get(callId) : undefined
+      if (!t) {
+        t = openTool(callId || `call_${crypto.randomUUID().slice(0, 8)}`, (j.item?.name as string) ?? '')
+      }
+      sse('content_block_delta', { type: 'content_block_delta', index: t.outIndex, delta: { type: 'input_json_delta', partial_json: delta } })
+      return
+    }
+    if (type === 'response.completed' || type === 'response.incomplete') {
+      const r = j.response ?? {}
+      const usage = (r.usage ?? {}) as { output_tokens?: unknown }
+      const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 1
+      finish(type === 'response.incomplete' ? 'max_tokens' : toolOpened ? 'tool_use' : 'end_turn', outputTokens)
+      return
+    }
+    if (type === 'response.failed' || type === 'error') {
+      const err = (j.response as { error?: { message?: unknown } } | undefined)?.error
+      const message = typeof err?.message === 'string' ? err.message : '上游 Responses 请求失败'
+      sse('error', { type: 'error', error: { type: 'api_error', message } })
+      closed = true
+      res.end()
+    }
+  }
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      for (;;) {
+        const nl = buffer.indexOf('\n')
+        if (nl < 0) break
+        const line = buffer.slice(0, nl).replace(/\r$/, '')
+        buffer = buffer.slice(nl + 1)
+        if (line.startsWith('data:')) handleEvent(line.slice(5).trim())
+      }
+    }
+  } catch {
+    /* 上游中断：尽量收尾 */
+  }
+  if (!closed) finish(toolOpened ? 'tool_use' : 'end_turn', 1)
+}
+
 // ─── OpenAI SSE → Anthropic SSE（流式状态机） ───
 
 interface ToolBlockState {

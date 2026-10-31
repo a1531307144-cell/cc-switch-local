@@ -23,6 +23,8 @@
 - **MCP 服务器管理**（v0.8.5）：统一面板管理 Claude Code（~/.claude.json）与 Codex（config.toml）的 MCP 服务器——添加/删除 stdio 服务器（command/args/env），手术式只改 MCP 相键，其余配置原样保留，写入前自动备份
 - **提示词库**（v0.8.9）：管理 Claude Code / Codex 的全局提示词（~/.claude/CLAUDE.md、~/.codex/AGENTS.md）——库内多条目切换，一键应用（原文件自动备份），也可把当前文件导入进库
 - **方案组**（v0.8.9）：把「两个工具各用哪个供应商」保存为命名组合，一键整体切换（成员可设为恢复官方配置）
+- **Skills 管理**（v0.8.10）：管理 Claude Code（~/.claude/skills）与 Codex（~/.codex/skills）的 Agent Skills——从 GitHub 仓库或本地 zip 安装，查看/更新/删除；安装记录来源仓库，可一键重装更新
+- **Responses 协议转换**（v0.8.10）：Claude 供应商的 OpenAI 兼容协议可选报文格式——Chat Completions（默认）或 **Responses API**（供只暴露 /responses 的上游，如 OpenAI 新模型），路由自动完成 Anthropic↔Responses 双向转换（含流式与工具调用）
 - **系统托盘**：关窗驻留托盘，菜单里一键切换供应商 / 恢复官方配置
 - **加密备份**：把供应商库导出为 AES-256-GCM 加密文件（.ccslbak），跨设备迁移时 Key 不经过任何云端，手动拷文件即可
 - **自动备份**：每次写配置前自动备份，保留最近 10 份，可在「设置」里一键恢复
