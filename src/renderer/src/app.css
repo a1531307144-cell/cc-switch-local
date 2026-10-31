@@ -92,7 +92,9 @@ code {
   background: var(--bg);
 }
 
-/* ---------- 悬浮侧栏（可折叠：辅助功能区，主视觉留给供应商区） ---------- */
+/* ---------- 悬浮侧栏（可折叠：辅助功能区，主视觉留给供应商区） ----------
+   折叠动画平滑三要素：overflow hidden（文字裁切而非换行重排）、文本 nowrap、
+   宽度/内边距统一缓动（transition 声明在 prefers-reduced-motion 块内） */
 .sidebar {
   width: 218px;
   flex-shrink: 0;
@@ -105,7 +107,7 @@ code {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  transition: width 0.18s ease;
+  overflow: hidden;
 }
 
 .sidebar.collapsed {
@@ -141,6 +143,7 @@ code {
   font-weight: 700;
   font-size: 14px;
   letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .brand-sub {
@@ -243,6 +246,10 @@ code {
 .sidebar-foot {
   margin-top: auto;
   padding: 10px 8px 2px;
+}
+
+.sidebar-foot p {
+  white-space: nowrap;
 }
 
 .sidebar.collapsed .sidebar-foot {
@@ -408,6 +415,34 @@ code {
   height: 1px;
   margin: 4px 6px;
   background: var(--border);
+}
+
+/* ---------- 自绘下拉（替代原生 select：原生弹层与应用设计脱节） ---------- */
+.select-btn {
+  min-width: 168px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+}
+
+.select-caret {
+  color: var(--muted);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.select-dd .menu {
+  right: auto;
+  left: 0;
+  min-width: 100%;
+}
+
+.menu-item.selected {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 600;
 }
 
 /* ---------- 供应商网格（图标优先的紧凑卡片，可拖拽排序） ---------- */
@@ -889,15 +924,6 @@ code {
   margin: 8px 0;
 }
 
-.field-row select {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-s);
-  padding: 6px 12px;
-  background: var(--bg);
-  color: var(--text);
-  font-family: inherit;
-}
-
 .settings .check {
   margin: 6px 0;
 }
@@ -956,6 +982,22 @@ code {
       border-color 0.12s ease,
       color 0.12s ease,
       box-shadow 0.15s ease;
+  }
+
+  /* 侧栏折叠动画：宽度与内边距同一缓动，文字靠 nowrap+overflow 裁切而非换行重排（不卡顿） */
+  .sidebar {
+    transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .brand,
+  .sidebar-foot {
+    transition: padding 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .nav {
+    transition:
+      background-color 0.12s ease,
+      padding 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .modal-overlay {

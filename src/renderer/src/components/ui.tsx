@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { VendorInfo } from '../../../shared/vendors'
 
 // 构建时内置的厂商图标（simple-icons，CC0）——运行时不向任何第三方请求图标
@@ -49,6 +49,63 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
         </div>
         {children}
       </div>
+    </div>
+  )
+}
+
+export interface DropdownOption {
+  value: string
+  label: string
+}
+
+/**
+ * 与整体设计语言一致的自绘下拉（2026-10-31 用户反馈：原生 select 弹层与应用风格脱节）。
+ * 交互与卡片「⋯」菜单一致：点开、选中即收、点外面关。
+ */
+export function Dropdown({
+  value,
+  options,
+  onChange,
+  ariaLabel
+}: {
+  value: string
+  options: DropdownOption[]
+  onChange: (v: string) => void
+  ariaLabel?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const current = options.find((o) => o.value === value)
+  return (
+    <div
+      className="dd select-dd"
+      onBlur={() => {
+        window.setTimeout(() => setOpen(false), 120)
+      }}
+    >
+      <button type="button" className="btn select-btn" aria-label={ariaLabel} onClick={() => setOpen((v) => !v)}>
+        <span>{current?.label ?? value}</span>
+        <span className="select-caret" aria-hidden>
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div className="menu">
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              className={`menu-item${o.value === value ? ' selected' : ''}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setOpen(false)
+                if (o.value !== value) onChange(o.value)
+              }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

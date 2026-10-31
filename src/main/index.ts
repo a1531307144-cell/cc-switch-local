@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, nativeTheme, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { dataDir, loadStore, newId, saveStore } from './store'
@@ -347,6 +347,13 @@ function registerIpc(): void {
 
   ipcMain.handle('app:version', () => app.getVersion())
 
+  ipcMain.handle('app:copyText', (_e, text: string) => {
+    // 长度上限防滥用；内容写本机剪贴板，不出网
+    if (typeof text !== 'string' || text.length > 10000) throw new Error('非法的剪贴板内容')
+    clipboard.writeText(text)
+    return true
+  })
+
   ipcMain.handle('app:openReleases', () => shell.openExternal(RELEASES_URL))
 
   registerUpdateIpc()
@@ -360,11 +367,13 @@ if (!gotLock) {
   app.quit()
 } else {
   app.on('second-instance', (_e, argv) => {
-    // Windows 上点 ccsl:// 链接会启动第二个实例并由这里转交
+    // Windows 上点 ccsl:// 链接或双击快捷方式会启动第二个实例并由这里转交。
+    // 关窗是 hide 不是 close：窗口处于隐藏态时 focus() 不会让它出现，必须先 show()（2026-10-31 用户实测 bug）
     const link = findDeeplinkInArgv(argv)
     if (link) deliverDeeplink(link)
     if (win) {
       if (win.isMinimized()) win.restore()
+      win.show()
       win.focus()
     }
   })

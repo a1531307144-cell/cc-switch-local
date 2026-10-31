@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { KeyType, Lang, Preset, ToolId } from '../../../shared/types'
 import { t } from '../../../shared/i18n'
 import { detectVendor } from '../../../shared/vendors'
-import { Modal, VendorChip } from './ui'
+import { Dropdown, Modal, VendorChip } from './ui'
 
 export interface FormDraft {
   id?: string
@@ -168,10 +168,14 @@ export default function ProviderForm({
         {form.tool === 'claude' ? (
           <label>
             {t(lang, 'form.keyType')}
-            <select value={form.keyType} onChange={(e) => set({ keyType: e.target.value as KeyType })}>
-              <option value="auth_token">{t(lang, 'form.keyType.auth')}</option>
-              <option value="api_key">{t(lang, 'form.keyType.api')}</option>
-            </select>
+            <Dropdown
+              value={form.keyType}
+              options={[
+                { value: 'auth_token', label: t(lang, 'form.keyType.auth') },
+                { value: 'api_key', label: t(lang, 'form.keyType.api') }
+              ]}
+              onChange={(v) => set({ keyType: v as KeyType })}
+            />
           </label>
         ) : (
           <>
@@ -181,10 +185,14 @@ export default function ProviderForm({
             </label>
             <label>
               wire_api
-              <select value={form.wireApi} onChange={(e) => set({ wireApi: e.target.value as 'responses' | 'chat' })}>
-                <option value="responses">responses</option>
-                <option value="chat">chat</option>
-              </select>
+              <Dropdown
+                value={form.wireApi}
+                options={[
+                  { value: 'responses', label: 'responses' },
+                  { value: 'chat', label: 'chat' }
+                ]}
+                onChange={(v) => set({ wireApi: v as 'responses' | 'chat' })}
+              />
             </label>
           </>
         )}

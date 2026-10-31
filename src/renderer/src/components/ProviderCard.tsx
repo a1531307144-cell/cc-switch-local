@@ -31,7 +31,8 @@ export default function ProviderCard({
   onSwitch,
   onEdit,
   onClone,
-  onDelete
+  onDelete,
+  onNotify
 }: {
   provider: Provider
   lang: Lang
@@ -47,6 +48,7 @@ export default function ProviderCard({
   onEdit: (p: Provider) => void
   onClone: (p: Provider) => void
   onDelete: (p: Provider) => void
+  onNotify: (text: string, kind?: 'ok' | 'err') => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [dropUp, setDropUp] = useState(false)
@@ -107,10 +109,11 @@ export default function ProviderCard({
       wireApi: provider.wireApi
     })
     try {
-      await navigator.clipboard.writeText(link)
-      window.alert(t(lang, 'card.linkCopied'))
+      // 主进程写剪贴板：渲染层 navigator.clipboard 会被权限加固拒绝（静默失败）
+      await window.api.copyText(link)
+      onNotify(t(lang, 'card.linkCopied'))
     } catch {
-      /* 剪贴板不可用时静默 */
+      onNotify(t(lang, 'card.linkCopied'), 'err')
     }
   }
 

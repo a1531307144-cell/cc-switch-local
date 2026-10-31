@@ -195,6 +195,8 @@ export interface Api {
   clearAllData(): Promise<{ removed: string[] }>
   onDeeplinkProvider(cb: (r: DeeplinkResult) => void): () => void
   settingsUpdate(patch: Partial<AppSettings>): Promise<AppSettings>
+  /** 主进程侧写剪贴板（渲染层 navigator.clipboard 会被权限加固拒绝，走 IPC 才可靠） */
+  copyText(text: string): Promise<boolean>
   openPath(kind: 'data' | 'claudeConfig' | 'codexConfig'): Promise<void>
   appVersion(): Promise<string>
   updateCheck(): Promise<{ version?: string | null; current?: string; error?: string }>

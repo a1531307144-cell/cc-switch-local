@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AppSettings, BackupInfo, RouterStatus, StoreShape, ToolId } from '../../../shared/types'
 import { t, type Lang } from '../../../shared/i18n'
-import { Modal } from './ui'
+import { Dropdown, Modal } from './ui'
 
 function fmtDate(ms: number): string {
   const d = new Date(ms)
@@ -166,21 +166,31 @@ export default function SettingsPanel({
     <div className="settings">
       <section className="card">
         <h3>{t(lang, 'set.appearance')}</h3>
-        <label className="field-row">
+        <div className="field-row">
           {t(lang, 'set.theme')}
-          <select value={s.theme} onChange={(e) => updateSetting({ theme: e.target.value as AppSettings['theme'] })}>
-            <option value="system">{t(lang, 'set.theme.system')}</option>
-            <option value="light">{t(lang, 'set.theme.light')}</option>
-            <option value="dark">{t(lang, 'set.theme.dark')}</option>
-          </select>
-        </label>
-        <label className="field-row">
+          <Dropdown
+            ariaLabel={t(lang, 'set.theme')}
+            value={s.theme}
+            options={[
+              { value: 'system', label: t(lang, 'set.theme.system') },
+              { value: 'light', label: t(lang, 'set.theme.light') },
+              { value: 'dark', label: t(lang, 'set.theme.dark') }
+            ]}
+            onChange={(v) => void updateSetting({ theme: v as AppSettings['theme'] })}
+          />
+        </div>
+        <div className="field-row">
           {t(lang, 'set.language')}
-          <select value={lang} onChange={(e) => updateSetting({ language: e.target.value as AppSettings['language'] })}>
-            <option value="zh">中文</option>
-            <option value="en">English</option>
-          </select>
-        </label>
+          <Dropdown
+            ariaLabel={t(lang, 'set.language')}
+            value={lang}
+            options={[
+              { value: 'zh', label: '中文' },
+              { value: 'en', label: 'English' }
+            ]}
+            onChange={(v) => void updateSetting({ language: v as AppSettings['language'] })}
+          />
+        </div>
       </section>
 
       <section className="card">

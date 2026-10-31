@@ -602,6 +602,7 @@ export default function App() {
                         }
                         onClone={clone}
                         onDelete={del}
+                        onNotify={notify}
                       />
                     ))}
                   </div>
