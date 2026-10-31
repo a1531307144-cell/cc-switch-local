@@ -100,6 +100,23 @@ export const STRINGS = {
     en: 'Chat Completions for regular OpenAI-compatible endpoints; Responses API for upstreams that only expose /responses (e.g. newer OpenAI models)'
   },
 
+  // ── 添加供应商整页（v0.8.13） ──
+  'add.title': { zh: '添加供应商', en: 'Add provider' },
+  'add.back': { zh: '返回', en: 'Back' },
+  'add.searchPh': { zh: '搜索名称或网址，例如 kimi、智谱、openrouter', en: 'Search by name or URL, e.g. kimi, openrouter' },
+  'add.custom': { zh: '自定义配置', en: 'Custom config' },
+  'add.customHint': { zh: '手动填写请求地址和 API Key', en: 'Enter the endpoint and API key manually' },
+  'add.versions': { zh: '{n} 个版本', en: '{n} variants' },
+  'add.none': { zh: '没有匹配的预设：换个关键词，或用上面的「自定义配置」', en: 'No matching preset — try another keyword or use Custom config above' },
+  'add.cat.all': { zh: '全部', en: 'All' },
+  'add.cat.vendor': { zh: '模型厂商', en: 'Model vendors' },
+  'add.cat.agg': { zh: '聚合中转', en: 'Aggregators' },
+  'add.cat.third': { zh: '第三方平台', en: 'Third-party' },
+  'add.cat.cloud': { zh: '云服务商', en: 'Cloud providers' },
+  'add.cat.local': { zh: '本地', en: 'Local' },
+  'add.cat.official': { zh: '官方', en: 'Official' },
+  'form.presetApplied': { zh: '来自预设：{name}', en: 'From preset: {name}' },
+
   // ── 会话阅读器 ──
   'sess.title': { zh: '会话阅读器', en: 'Session reader' },
   'sess.desc': {

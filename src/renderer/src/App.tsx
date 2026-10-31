@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
-import type { DeeplinkResult, Lang, Provider, RouterStatus, StoreShape, ToolId, ToolStatus } from '../../shared/types'
+import type { DeeplinkResult, Lang, Preset, Provider, RouterStatus, StoreShape, ToolId, ToolStatus } from '../../shared/types'
 import { t } from '../../shared/i18n'
 import { detectVendor } from '../../shared/vendors'
 import { aggregateEntries } from '../../shared/aggregate'
@@ -12,11 +12,12 @@ import McpView from './components/McpView'
 import SkillsView from './components/SkillsView'
 import PromptsView from './components/PromptsView'
 import GroupsView from './components/GroupsView'
+import AddProviderView from './components/AddProviderView'
 import UsageDashboard from './components/UsageDashboard'
 import { IconBook, IconChart, IconChevronLeft, IconChevronRight, IconCube, IconGear, IconGrid, IconLayers, IconLock, IconNote, IconPlug, IconRows, IconSearch } from './components/Icons'
 import logoUrl from './assets/logo.png'
 
-type View = ToolId | 'usage' | 'settings' | 'sessions' | 'mcp' | 'prompts' | 'groups' | 'skills'
+type View = ToolId | 'usage' | 'settings' | 'sessions' | 'mcp' | 'prompts' | 'groups' | 'skills' | 'add'
 
 /** 主密码解锁屏（锁定态下渲染层只显示这个） */
 function UnlockScreen({ lang, onUnlocked }: { lang: Lang; onUnlocked: () => void }) {
@@ -91,6 +92,7 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false)
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
+  const [allPresets, setAllPresets] = useState<Preset[]>([])
 
   const lang: Lang = store?.settings.language === 'en' ? 'en' : 'zh'
   const tr = useCallback((key: Parameters<typeof t>[1], vars?: Record<string, string | number>) => t(lang, key, vars), [lang])
@@ -119,6 +121,10 @@ export default function App() {
 
   useEffect(() => {
     refresh().catch(() => notify(t('zh', 'app.initFail'), 'err'))
+    window.api
+      .presetsGet()
+      .then(setAllPresets)
+      .catch(() => {})
   }, [refresh, notify])
 
   // 更新事件（启动静默检查发现新版 / 下载进度 / 下载完成）+ 托盘侧数据变更 + 深链
@@ -372,6 +378,7 @@ export default function App() {
     })
     notify(d.id ? tr('toast.saved') : tr('toast.added'))
     setDraft(null)
+    if (view === 'add') setView(activeTool)
     await refresh()
   }
 
@@ -728,7 +735,7 @@ export default function App() {
                     <IconSearch />
                     <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr('zone.searchPh')} />
                   </div>
-                  <button type="button" className="btn primary sm" onClick={() => setDraft(emptyDraft(activeTool))}>
+                  <button type="button" className="btn primary sm" onClick={() => setView('add')}>
                     {tr('tool.new')}
                   </button>
                 </div>
@@ -786,6 +793,15 @@ export default function App() {
                 </>
               )}
             </>
+          )}
+          {view === 'add' && (
+            <AddProviderView
+              lang={lang}
+              presets={allPresets}
+              tool={activeTool}
+              onBack={() => setView(activeTool)}
+              onPick={(d) => setDraft(d)}
+            />
           )}
           {view === 'sessions' && <SessionsView lang={lang} notify={notify} />}
           {view === 'mcp' && <McpView lang={lang} notify={notify} />}

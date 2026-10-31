@@ -137,6 +137,10 @@ export interface Preset {
   /** codex 预设：wire_api（缺省 responses） */
   wireApi?: 'responses' | 'chat'
   notes?: string
+  /** 预设分类（v0.8.13 起，添加页分组用）：official/cn_official/aggregator/third_party/cloud_provider/local */
+  category?: 'official' | 'cn_official' | 'aggregator' | 'third_party' | 'cloud_provider' | 'local'
+  /** 同族变体分组键（v0.8.13 起）：同 family 的条目在添加页聚合为一张卡（N 个版本） */
+  family?: string
   /** 搜索键：名称 + 域名小写，渲染层过滤用 */
   searchKey?: string
 }

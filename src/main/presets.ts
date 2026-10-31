@@ -6,6 +6,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: 'Anthropic 官方（API 计费）',
+    category: 'official',
     baseUrl: 'https://api.anthropic.com',
     keyType: 'api_key',
     notes: '官方 API；Key 类型选 api_key。订阅登录用户无需配置此项'
@@ -13,6 +14,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: 'DeepSeek',
+    category: 'cn_official',
     baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-chat',
     notes: 'Anthropic 兼容端点，见 DeepSeek 官方文档'
@@ -20,6 +22,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: 'Moonshot Kimi',
+    category: 'cn_official',
     baseUrl: 'https://api.moonshot.cn/anthropic',
     model: 'kimi-k2-turbo-preview',
     notes: 'Anthropic 兼容端点，见 Moonshot 官方文档'
@@ -27,6 +30,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: '智谱 GLM',
+    category: 'cn_official',
     baseUrl: 'https://open.bigmodel.cn/api/anthropic',
     model: 'glm-4.6',
     notes: 'Anthropic 兼容端点，见智谱官方文档'
@@ -34,6 +38,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: '硅基流动 SiliconFlow',
+    category: 'cn_official',
     baseUrl: 'https://api.siliconflow.cn/v1',
     model: 'deepseek-ai/DeepSeek-V4-Flash',
     protocol: 'openai',
@@ -42,6 +47,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: '阿里云百炼 Qwen',
+    category: 'cn_official',
     baseUrl: 'https://dashscope.aliyuncs.com/api/v2/apps/claude-code/proxy',
     model: 'qwen3-coder-plus',
     notes: 'Claude Code 专用代理端点，见阿里云官方文档'
@@ -58,6 +64,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: 'Moonshot Kimi（OpenAI 兼容）',
+    category: 'cn_official',
     baseUrl: 'https://api.moonshot.cn/v1',
     model: 'kimi-k2-turbo-preview',
     protocol: 'openai',
@@ -66,6 +73,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: '智谱 GLM（OpenAI 兼容）',
+    category: 'cn_official',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-4.6',
     protocol: 'openai',
@@ -74,6 +82,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'claude',
     name: '阿里云百炼 Qwen（OpenAI 兼容）',
+    category: 'cn_official',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     model: 'qwen3-coder-plus',
     protocol: 'openai',
@@ -82,6 +91,7 @@ const CURATED_PRESETS: Preset[] = [
   {
     tool: 'codex',
     name: 'OpenAI 官方',
+    category: 'official',
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-5-codex',
     notes: '官方 API；如用 ChatGPT 订阅登录，请用「恢复官方配置」'

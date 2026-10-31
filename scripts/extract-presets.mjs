@@ -76,7 +76,8 @@ for (const p of claudeRaw) {
     name: String(p.name),
     baseUrl,
     keyType,
-    website: typeof p.websiteUrl === 'string' ? p.websiteUrl : undefined
+    category: typeof p.category === 'string' ? p.category : undefined,
+    family: typeof p.family === 'string' ? p.family : undefined
   })
 }
 
@@ -118,7 +119,8 @@ for (const p of codexRaw) {
     baseUrl,
     model,
     wireApi: wireApi === 'chat' ? 'chat' : 'responses',
-    website: typeof p.websiteUrl === 'string' ? p.websiteUrl : undefined
+    category: typeof p.category === 'string' ? p.category : undefined,
+    family: typeof p.family === 'string' ? p.family : undefined
   })
 }
 
@@ -146,6 +148,8 @@ const fmt = (list) =>
       if (p.keyType) props.push(`keyType: '${p.keyType}'`)
       if (p.wireApi) props.push(`wireApi: '${p.wireApi}'`)
       if (p.model) props.push(`model: ${JSON.stringify(p.model)}`)
+      if (p.category) props.push(`category: '${p.category}'`)
+      if (p.family) props.push(`family: '${p.family}'`)
       props.push(`searchKey: ${JSON.stringify(`${p.name} ${domain}${alias}`.toLowerCase())}`)
       return `  { ${props.join(', ')} }`
     })
