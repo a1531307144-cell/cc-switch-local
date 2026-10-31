@@ -197,8 +197,8 @@ export const STRINGS = {
   },
   'set.router': { zh: '本机路由', en: 'Local router' },
   'set.routerDesc': {
-    zh: '在工具页用「本机路由」开关开启。开启后请求经 127.0.0.1 代理转发：切换供应商即时生效，上游故障时按列表顺序自动转移（最简版仅透传 Anthropic/OpenAI 兼容端点，协议转换留待后续版本）。',
-    en: 'Toggle per tool on its page. Requests go through a 127.0.0.1 proxy: provider switches apply instantly, upstream failures fail over in list order (minimal version passes through Anthropic/OpenAI-compatible endpoints only; protocol conversion comes later).'
+    zh: '在工具页用「本机路由」开关开启。开启后请求经 127.0.0.1 代理转发：切换供应商即时生效，上游故障（5xx / 429 / 连接失败）时按列表顺序自动转移——转移会在下一家重发同一请求，极端情况下可能重复计费。最简版仅透传 Anthropic/OpenAI 兼容端点，协议转换留待后续版本。',
+    en: 'Toggle per tool on its page. Requests go through a 127.0.0.1 proxy: provider switches apply instantly; upstream failures (5xx / 429 / connection errors) fail over in list order — the same request is resent to the next provider, which may cause duplicate billing in rare cases. Minimal version passes through Anthropic/OpenAI-compatible endpoints only; protocol conversion comes later.'
   },
   'set.routerRunning': {
     zh: '状态：运行中（127.0.0.1:{port}）｜Claude 转发 {c} 次/失败 {cf} 次｜Codex 转发 {x} 次/失败 {xf} 次',

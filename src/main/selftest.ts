@@ -10,7 +10,7 @@ import { usageStats } from './usage'
 import { fetchBalance, balanceSupported } from './balance'
 import { buildProviderDeeplink, findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
 import { clearAppData } from './cleardata'
-import { cloneProvider, reorderProviders } from './library'
+import { cloneProvider, reorderProviders, validateSettingsPatch } from './library'
 import { routerPort, routerStatus, startRouter, stopRouter } from './router'
 import { detectVendor } from '../shared/vendors'
 import http from 'node:http'
@@ -41,6 +41,15 @@ export async function runSelfTest(): Promise<void> {
   }
   const assert = (cond: boolean, msg: string): void => {
     if (!cond) throw new Error(msg)
+  }
+  const assertThrows = (fn: () => void, msg: string): void => {
+    let threw = false
+    try {
+      fn()
+    } catch {
+      threw = true
+    }
+    assert(threw, msg)
   }
 
   const out = process.env.CCS_SELFTEST_OUT || path.join(process.cwd(), 'selftest-report.json')
@@ -126,6 +135,28 @@ export async function runSelfTest(): Promise<void> {
       return `存储文件：${storeFile()}`
     })
 
+    await step('加载防线：providers.json 里的坏记录被丢弃（2026-10-31 审计 #8）', async () => {
+      const raw = JSON.parse(await fsp.readFile(storeFile(), 'utf8')) as { providers: unknown[] }
+      raw.providers.push({ id: 'bad1', tool: 'nope', name: 'x', baseUrl: 'https://x.example.com', apiKey: 'k' })
+      raw.providers.push({ id: 'bad2', tool: 'claude', name: '', baseUrl: 'https://x.example.com', apiKey: 'k' })
+      await fsp.writeFile(storeFile(), JSON.stringify(raw), 'utf8')
+      const reloaded = loadStore()
+      assert(reloaded.providers.length === 3, `坏记录应被过滤，应剩 3 条，实际 ${reloaded.providers.length}`)
+      assert(reloaded.providers.every((p) => p.id !== 'bad1' && p.id !== 'bad2'), '坏记录 id 不应存在')
+    })
+
+    await step('设置校验：非法 patch 全部拒绝，合法 patch 通过（2026-10-31 审计 P2）', async () => {
+      assertThrows(() => validateSettingsPatch({ theme: 'hacker' as never }), '非法主题应拒绝')
+      assertThrows(() => validateSettingsPatch({ autoStart: 'yes' as never }), '非法自启开关应拒绝')
+      assertThrows(() => validateSettingsPatch({ sidebarCollapsed: 1 as never }), '非法侧栏状态应拒绝')
+      assertThrows(() => validateSettingsPatch({ router: { claude: 'yes' } as never }), '非法路由开关应拒绝')
+      assertThrows(() => validateSettingsPatch({ router: { claude: true, codex: false, port: 99999 } as never }), '越界端口应拒绝')
+      assertThrows(() => validateSettingsPatch({ evil: 1 } as never), '未知键应拒绝')
+      validateSettingsPatch({ sidebarCollapsed: true })
+      validateSettingsPatch({ router: { claude: true, codex: false, port: 15721 } })
+      validateSettingsPatch({ theme: 'dark', language: 'en' })
+    })
+
     await step('Claude 切换 A：写 AUTH_TOKEN，保留 CUSTOM，删除 API_KEY，产生备份', async () => {
       const r = await claude.switchClaude(pa)
       const data = await readJson(r.files[0])
@@ -178,6 +209,13 @@ export async function runSelfTest(): Promise<void> {
       assert(tomlText.includes('approval_policy = "on-request"'), '用户顶层键丢失')
       assert(tomlText.includes('[profile.fast]'), '用户 profile 段丢失')
       assert(tomlText.includes('model_reasoning_effort = "low"'), 'profile 内容丢失')
+      // 多行字符串陷阱：内部伪键/伪段头不得被误当真（2026-10-31 审计 #5）
+      assert(tomlText.includes('model = fake'), '顶层多行字符串应原样保留（不被误替换）')
+      assert(tomlText.includes('[model_providers.evil]'), '字符串内伪段头应原样保留')
+      assert(
+        tomlText.indexOf('model_provider = "ccsl"') < tomlText.indexOf('[profile.fast]'),
+        'model_provider 应插入到首个真实 section 之前（而非字符串内或之后）'
+      )
       const auth = await readJson(r.files[1])
       assert(auth.OPENAI_API_KEY === pc.apiKey, 'OPENAI_API_KEY 未写入')
       return `备份：${r.backup}`
@@ -190,6 +228,26 @@ export async function runSelfTest(): Promise<void> {
       assert(!tomlText.includes('[model_providers.ccsl]'), 'ccsl 段应被移除')
       assert(tomlText.includes('# 用户手工维护的注释'), '恢复后顶层注释丢失')
       assert(tomlText.includes('[profile.fast]'), '恢复后 profile 段丢失')
+    })
+
+    await step('Codex：auth.json 损坏时切换中止，config.toml 不被改写（2026-10-31 审计 #4）', async () => {
+      await fsp.writeFile(path.join(home, '.codex', 'auth.json'), '{broken json', 'utf8')
+      const before = await fsp.readFile(path.join(home, '.codex', 'config.toml'), 'utf8')
+      let threw = false
+      try {
+        await codex.switchCodex(pc)
+      } catch {
+        threw = true
+      }
+      assert(threw, 'auth.json 非法 JSON 应中止切换')
+      const after = await fsp.readFile(path.join(home, '.codex', 'config.toml'), 'utf8')
+      assert(before === after, '中止时 config.toml 不应被改写')
+      // 恢复合法 auth.json 供后续步骤使用
+      await fsp.writeFile(
+        path.join(home, '.codex', 'auth.json'),
+        JSON.stringify({ OPENAI_API_KEY: 'sk-old-codex-key', tokens: { account_id: 'fixture' } }),
+        'utf8'
+      )
     })
 
     await step('cc-switch 迁移导入：从旧版 config.json 挖出供应商', async () => {
@@ -482,6 +540,71 @@ export async function runSelfTest(): Promise<void> {
         stopRouter()
         ok.close()
         fail.close()
+      }
+    })
+
+    await step('本机路由：来源校验（Origin / 错误 Host / OPTIONS 全部 403，不透传到上游）', async () => {
+      const received: string[] = []
+      const up = http.createServer((_req, res) => {
+        received.push('hit')
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end('{}')
+      })
+      await new Promise<void>((r) => up.listen(0, '127.0.0.1', () => r()))
+      const upAddr = up.address() as { port: number }
+      const s = loadStore()
+      const pOrigin = {
+        id: newId(),
+        tool: 'claude' as const,
+        name: '路由-来源校验',
+        baseUrl: `http://127.0.0.1:${upAddr.port}`,
+        apiKey: 'sk-origin-test-000000001',
+        keyType: 'auth_token' as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+      s.providers.push(pOrigin)
+      s.current.claude = pOrigin.id
+      await saveStore(s)
+      await startRouter()
+      try {
+        const base = `http://127.0.0.1:${routerPort()}/claude/v1/messages`
+        // 1) 浏览器跨域请求（带 Origin）→ 403
+        const r1 = await fetch(base, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', origin: 'https://evil.example.com' },
+          body: '{}'
+        })
+        assert(r1.status === 403, `带 Origin 应 403，实际 ${r1.status}`)
+        // 2) OPTIONS 预检 → 403
+        const r2 = await fetch(base, { method: 'OPTIONS' })
+        assert(r2.status === 403, `OPTIONS 应 403，实际 ${r2.status}`)
+        // 3) DNS rebinding（Host 伪造成外部域名）→ 403；fetch 禁改 Host，用原生 http.request
+        const bad = await new Promise<number>((resolve, reject) => {
+          const req = http.request(
+            {
+              host: '127.0.0.1',
+              port: routerPort(),
+              path: '/claude/v1/messages',
+              method: 'POST',
+              headers: { host: 'evil.example.com:1' }
+            },
+            (res) => {
+              res.resume()
+              resolve(res.statusCode ?? 0)
+            }
+          )
+          req.on('error', reject)
+          req.end()
+        })
+        assert(bad === 403, `伪造 Host 应 403，实际 ${bad}`)
+        // 4) 正常 CLI 请求（无 Origin、Host 为回环地址）仍透传
+        const r4 = await fetch(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+        assert(r4.status === 200, `正常请求应 200，实际 ${r4.status}`)
+        assert(received.length === 1, `上游只应收到 1 个请求，实际 ${received.length}（非法请求不得透传）`)
+      } finally {
+        stopRouter()
+        up.close()
       }
     })
 

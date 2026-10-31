@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { DragEvent } from 'react'
+import type { DragEvent, MouseEvent } from 'react'
 import type { BalanceResult, Lang, Provider, TestResult } from '../../../shared/types'
 import { t } from '../../../shared/i18n'
 import { detectVendor } from '../../../shared/vendors'
@@ -49,6 +49,7 @@ export default function ProviderCard({
   onDelete: (p: Provider) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [dropUp, setDropUp] = useState(false)
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<TestResult | null>(null)
   const [balance, setBalance] = useState<BalanceResult | null>(null)
@@ -56,6 +57,13 @@ export default function ProviderCard({
   const vendor = detectVendor(provider.baseUrl)
   // 余额查询只对有官方余额接口的三家显示（不把 Key 发给第三方）
   const balanceAvailable = vendor?.id === 'deepseek' || vendor?.id === 'moonshot' || vendor?.id === 'openrouter'
+
+  /** 最后一行卡片下方空间不足时菜单向上弹，避免被主画布裁剪（2026-10-31 审计 #11） */
+  const toggleMenu = (e: MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    setDropUp(window.innerHeight - rect.bottom < 240)
+    setMenuOpen((v) => !v)
+  }
 
   const runTest = async () => {
     setTesting(true)
@@ -157,12 +165,12 @@ export default function ProviderCard({
             className="btn sm icon-btn"
             title={t(lang, 'card.more')}
             aria-label={t(lang, 'card.more')}
-            onClick={() => setMenuOpen((v) => !v)}
+            onClick={toggleMenu}
           >
             ⋯
           </button>
           {menuOpen && (
-            <div className="menu">
+            <div className={`menu${dropUp ? ' up' : ''}`}>
               <button
                 type="button"
                 className="menu-item"

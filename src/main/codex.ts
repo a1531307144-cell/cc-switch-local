@@ -51,18 +51,34 @@ function isSectionHeader(line: string): boolean {
   return t.startsWith('[') && t.endsWith(']')
 }
 
+/**
+ * 标记哪些行处于 TOML 多行字符串（''' / """）内部——这些行不参与顶层键/段头识别，
+ * 否则字符串里的 `model = fake`、`[model_providers.ccsl]` 会被误当真（2026-10-31 审计 #5）。
+ */
+function multilineMask(lines: string[]): boolean[] {
+  const mask: boolean[] = new Array(lines.length).fill(false)
+  let inside = false
+  for (let i = 0; i < lines.length; i++) {
+    mask[i] = inside
+    const triples = (lines[i].match(/'''|"""/g) ?? []).length
+    if (triples % 2 === 1) inside = !inside
+  }
+  return mask
+}
+
 /** 顶层裸键赋值行：key = value（不含点号、不在任何 section 内） */
 function topKeyValue(line: string, key: string): boolean {
   return new RegExp(`^\\s*${key}\\s*=`).test(line)
 }
 
-/** 找到 [model_providers.ccsl] 块的行区间 [start, end)（end 不含） */
-function findSectionBlock(lines: string[], header: string): [number, number] | null {
+/** 找到 [model_providers.ccsl] 块的行区间 [start, end)（end 不含）；mask 内的行不参与匹配 */
+function findSectionBlock(lines: string[], header: string, mask?: boolean[]): [number, number] | null {
+  const m = mask ?? multilineMask(lines)
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === header) {
+    if (!m[i] && lines[i].trim() === header) {
       let end = lines.length
       for (let j = i + 1; j < lines.length; j++) {
-        if (isSectionHeader(lines[j])) {
+        if (!m[j] && isSectionHeader(lines[j])) {
           end = j
           break
         }
@@ -84,6 +100,7 @@ function applySurgicalEdit(original: string, provider: Provider | null, viaRoute
   let lines = original.length ? original.split(/\r?\n/) : []
   if (lines.length && lines[lines.length - 1] === '') lines.pop()
 
+  const mask = multilineMask(lines)
   const HEADER = `[model_providers.${SECTION}]`
 
   if (provider) {
@@ -96,7 +113,7 @@ function applySurgicalEdit(original: string, provider: Provider | null, viaRoute
       `wire_api = ${tomlStr(provider.wireApi ?? 'responses')}`,
       'requires_openai_auth = true'
     ]
-    const existing = findSectionBlock(lines, HEADER)
+    const existing = findSectionBlock(lines, HEADER, mask)
     if (existing) {
       lines.splice(existing[0], existing[1] - existing[0], ...block)
     } else {
@@ -106,11 +123,11 @@ function applySurgicalEdit(original: string, provider: Provider | null, viaRoute
 
     // 2) 顶层 model_provider / model：有则原地替换，无则插到首个 section 之前
     const insertAt = (() => {
-      const idx = lines.findIndex((l) => isSectionHeader(l))
+      const idx = lines.findIndex((l, i) => !mask[i] && isSectionHeader(l))
       return idx === -1 ? lines.length : idx
     })()
     const upsertTop = (key: string, value: string) => {
-      const topIdx = lines.findIndex((l, i) => i < insertAt + 1 && topKeyValue(l, key))
+      const topIdx = lines.findIndex((l, i) => i < insertAt + 1 && !mask[i] && topKeyValue(l, key))
       const line = `${key} = ${tomlStr(value)}`
       if (topIdx >= 0 && topIdx < insertAt + 1) lines[topIdx] = line
       else lines.splice(insertAt, 0, line)
@@ -119,8 +136,8 @@ function applySurgicalEdit(original: string, provider: Provider | null, viaRoute
     if (provider.model) upsertTop('model', provider.model)
   } else {
     // 恢复官方：仅移除我们写入的 model_provider 行与 ccsl 段（model 留给用户）
-    lines = removeSection(lines, HEADER)
-    const mpIdx = lines.findIndex((l) => topKeyValue(l, 'model_provider'))
+    lines = removeSection(lines, HEADER, mask)
+    const mpIdx = lines.findIndex((l, i) => !mask[i] && topKeyValue(l, 'model_provider'))
     if (mpIdx >= 0 && lines[mpIdx].trim() === `model_provider = ${tomlStr(SECTION)}`) {
       lines.splice(mpIdx, 1)
     }
@@ -129,8 +146,8 @@ function applySurgicalEdit(original: string, provider: Provider | null, viaRoute
 }
 
 /** 删除指定 header 段的块体（header 行已单独移除时也能正确处理剩余行） */
-function removeSection(lines: string[], header: string): string[] {
-  const block = findSectionBlock(lines, header)
+function removeSection(lines: string[], header: string, mask?: boolean[]): string[] {
+  const block = findSectionBlock(lines, header, mask)
   if (!block) return lines
   const out = [...lines]
   out.splice(block[0], block[1] - block[0])
@@ -156,6 +173,24 @@ export async function switchCodex(provider: Provider | null, viaRouter = false):
     if (bak) backups.push(bak)
   }
 
+  // 写任何文件之前先读 auth.json：存在但不是合法 JSON 时中止（2026-10-31 审计 #4），
+  // 否则会用空对象覆盖重写、丢掉用户原有字段（如官方登录 tokens）
+  let auth: Record<string, unknown> | null = null
+  if (provider) {
+    const raw = await fsp.readFile(codexAuthPath(), 'utf8').catch(() => '')
+    if (raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw) as unknown
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('不是 JSON 对象')
+        auth = parsed as Record<string, unknown>
+      } catch {
+        throw new Error(`auth.json 不是合法的 JSON 对象（已中止，不会写入任何文件）：请先修复或删除 ${codexAuthPath()}`)
+      }
+    } else {
+      auth = {}
+    }
+  }
+
   const original = fs.existsSync(codexConfigPath())
     ? await fsp.readFile(codexConfigPath(), 'utf8')
     : ''
@@ -170,13 +205,7 @@ export async function switchCodex(provider: Provider | null, viaRouter = false):
   await atomicWrite(codexConfigPath(), nextText)
 
   const files = [codexConfigPath()]
-  if (provider) {
-    let auth: Record<string, unknown> = {}
-    try {
-      auth = JSON.parse(await fsp.readFile(codexAuthPath(), 'utf8')) as Record<string, unknown>
-    } catch {
-      auth = {}
-    }
+  if (provider && auth) {
     auth.OPENAI_API_KEY = viaRouter ? 'ccsl-local-router' : provider.apiKey
     await atomicWrite(codexAuthPath(), JSON.stringify(auth, null, 2))
     files.push(codexAuthPath())

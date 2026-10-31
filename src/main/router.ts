@@ -16,6 +16,8 @@ const DEFAULT_PORT = 15721
 const MAX_ATTEMPTS = 4
 const MAX_BODY = 64 * 1024 * 1024
 const UPSTREAM_TIMEOUT_MS = 600_000
+/** 响应体阶段：超过这个时长没有任何新数据就断开（头部阶段超时由 UPSTREAM_TIMEOUT_MS 覆盖） */
+const BODY_IDLE_TIMEOUT_MS = 120_000
 
 let server: http.Server | null = null
 let lastError = ''
@@ -124,7 +126,31 @@ function buildUpstreamHeaders(tool: ToolId, provider: Provider, req: http.Incomi
   return headers
 }
 
+/**
+ * 来源校验（2026-10-31 审计 P1）：本路由会把真实 API Key 注入后转发，
+ * 绝不能让浏览器里的网页借道发请求——浏览器跨域请求必带 Origin（含预检 OPTIONS），
+ * 而 Claude Code / Codex CLI 客户端从不带 Origin。Host 校验另防 DNS rebinding。
+ */
+function loopbackHostOk(host: string | undefined, port: number): boolean {
+  if (!host) return false
+  const h = host.toLowerCase()
+  return h === `127.0.0.1:${port}` || h === `localhost:${port}` || h === `[::1]:${port}`
+}
+
 async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  const port = routerPort()
+  if (req.headers.origin) {
+    jsonError(res, 403, '拒绝来自浏览器的请求（本路由只服务本机 CLI 客户端）')
+    return
+  }
+  if (!loopbackHostOk(req.headers.host, port)) {
+    jsonError(res, 403, '拒绝：Host 不是本机回环地址（可能的 DNS rebinding）')
+    return
+  }
+  if (req.method === 'OPTIONS') {
+    jsonError(res, 403, '本路由不接受 OPTIONS 预检')
+    return
+  }
   const route = parseRoute(req.url ?? '')
   if (!route) {
     jsonError(res, 404, '未知路径（支持 /claude/* 与 /codex/*）')
@@ -188,12 +214,23 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       if (r.body) {
         await new Promise<void>((resolve) => {
           const stream = Readable.fromWeb(r.body as import('node:stream/web').ReadableStream)
+          // 响应体阶段同样有超时：空闲 120s 无新数据就断开，不永久占用
+          let idle = setTimeout(() => {
+            stream.destroy()
+            res.destroy()
+            resolve()
+          }, BODY_IDLE_TIMEOUT_MS)
+          stream.on('data', () => idle.refresh())
           stream.on('error', () => {
+            clearTimeout(idle)
             res.destroy()
             resolve()
           })
           stream.pipe(res)
-          res.on('close', resolve)
+          res.on('close', () => {
+            clearTimeout(idle)
+            resolve()
+          })
         })
       } else {
         res.end()

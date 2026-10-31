@@ -3,8 +3,8 @@ import path from 'node:path'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import { dialog, app } from 'electron'
-import { loadStore, newId, saveStore } from './store'
-import type { AppSettings, KeyType, Provider, ToolId } from '../shared/types'
+import { loadStore, newId, saveStore, sanitizeProviderRecord } from './store'
+import type { AppSettings, Provider } from '../shared/types'
 
 /**
  * 加密备份（云同步的替代方案）：把供应商库导出为 AES-256-GCM 加密文件。
@@ -73,40 +73,14 @@ export function decryptBackup(buf: Buffer, passphrase: string): BackupPayload {
   return payload
 }
 
-const TOOL_IDS: ToolId[] = ['claude', 'codex']
-const KEY_TYPES: KeyType[] = ['auth_token', 'api_key']
-
-/** 主进程侧逐条校验，防止备份文件被篡改后注入非法数据 */
-function sanitizeProvider(raw: unknown, idx: number): Provider | null {
-  if (!raw || typeof raw !== 'object') return null
-  const p = raw as Record<string, unknown>
-  const tool = p.tool
-  const name = p.name
-  const baseUrl = p.baseUrl
-  const apiKey = p.apiKey
-  if (typeof tool !== 'string' || !TOOL_IDS.includes(tool as ToolId)) return null
-  if (typeof name !== 'string' || !name.trim() || name.length > 200) return null
-  if (typeof baseUrl !== 'string' || !/^https?:\/\//i.test(baseUrl) || baseUrl.length > 2000) return null
-  if (typeof apiKey !== 'string' || !apiKey || apiKey.length > 4000) return null
-  const keyType = p.keyType === 'api_key' ? 'api_key' : 'auth_token'
-  if (p.keyType !== undefined && !KEY_TYPES.includes(p.keyType as KeyType)) return null
-  const model = typeof p.model === 'string' && p.model.length <= 200 ? p.model : undefined
-  const wireApi = p.wireApi === 'chat' ? 'chat' : p.wireApi === 'responses' ? 'responses' : undefined
-  const notes = typeof p.notes === 'string' && p.notes.length <= 2000 ? p.notes : undefined
-  void idx
-  return {
-    id: newId(),
-    tool: tool as ToolId,
-    name: name.trim(),
-    baseUrl,
-    apiKey,
-    keyType,
-    model,
-    wireApi,
-    notes,
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  }
+/**
+ * 主进程侧逐条校验，防止备份文件被篡改后注入非法数据。
+ * 与存储加载共用同一校验器（store.sanitizeProviderRecord）；导入一律发新 id，
+ * 不信任备份文件里的 id。
+ */
+function sanitizeProvider(raw: unknown): Provider | null {
+  const clean = sanitizeProviderRecord(raw)
+  return clean ? { ...clean, id: newId() } : null
 }
 
 function defaultBackupPath(): string {
@@ -166,7 +140,7 @@ export async function importBackupFromFile(file: string, passphrase: string): Pr
   let added = 0
   let skipped = 0
   for (let i = 0; i < payload.providers.length; i++) {
-    const clean = sanitizeProvider(payload.providers[i], i)
+    const clean = sanitizeProvider(payload.providers[i])
     if (!clean) {
       skipped++
       continue

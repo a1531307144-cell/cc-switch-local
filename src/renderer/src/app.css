@@ -364,6 +364,12 @@ code {
   z-index: 60;
 }
 
+/* 卡片在窗口下部时向上弹，避免被主画布滚动容器裁剪 */
+.menu.up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
 .menu-item {
   display: block;
   width: 100%;

@@ -10,7 +10,7 @@ import { backupExport, backupImport } from './backup'
 import { usageStats } from './usage'
 import { routerEnabled, routerStatus, startRouter, stopRouter } from './router'
 import { fetchBalance } from './balance'
-import { cloneProvider, reorderProviders } from './library'
+import { cloneProvider, reorderProviders, validateSettingsPatch } from './library'
 import { clearAppData } from './cleardata'
 import { findDeeplinkInArgv, parseProviderDeeplink } from './deeplink'
 import { PRESETS } from './presets'
@@ -130,6 +130,11 @@ const KEY_TYPES: string[] = ['auth_token', 'api_key']
 const WIRE_APIS: string[] = ['responses', 'chat']
 const isStr = (v: unknown): v is string => typeof v === 'string'
 
+/** tool 参数严格白名单：非 claude/codex 一律拒绝，绝不静默归到另一工具（2026-10-31 审计 P2） */
+function assertTool(tool: ToolId): void {
+  if (!(tool === 'claude' || tool === 'codex')) throw new Error('非法的工具类型')
+}
+
 /** IPC 是安全边界：所有来自渲染层的入参都在主进程重新校验 */
 function validateProviderInput(input: ProviderInput): void {
   if (!input || !TOOL_IDS.includes(input.tool)) throw new Error('非法的工具类型')
@@ -215,6 +220,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('provider:switch', async (_e, tool: ToolId, id: string | null) => {
+    assertTool(tool)
     const store = loadStore()
     let provider: Provider | null = null
     if (id) {
@@ -231,17 +237,25 @@ function registerIpc(): void {
     return result
   })
 
-  ipcMain.handle('tool:importCurrent', (_e, tool: ToolId) =>
-    tool === 'claude' ? claude.importCurrentClaude() : codex.importCurrentCodex()
-  )
+  ipcMain.handle('tool:importCurrent', (_e, tool: ToolId) => {
+    assertTool(tool)
+    return tool === 'claude' ? claude.importCurrentClaude() : codex.importCurrentCodex()
+  })
 
-  ipcMain.handle('tool:status', (_e, tool: ToolId) => (tool === 'claude' ? claude.status() : codex.status()))
+  ipcMain.handle('tool:status', (_e, tool: ToolId) => {
+    assertTool(tool)
+    return tool === 'claude' ? claude.status() : codex.status()
+  })
 
-  ipcMain.handle('tool:backups', (_e, tool: ToolId) => (tool === 'claude' ? claude.listBackups() : codex.listBackups()))
+  ipcMain.handle('tool:backups', (_e, tool: ToolId) => {
+    assertTool(tool)
+    return tool === 'claude' ? claude.listBackups() : codex.listBackups()
+  })
 
-  ipcMain.handle('tool:restoreBackup', async (_e, tool: ToolId, file: string) =>
-    tool === 'claude' ? claude.restoreBackup(file) : codex.restoreBackup(file)
-  )
+  ipcMain.handle('tool:restoreBackup', async (_e, tool: ToolId, file: string) => {
+    assertTool(tool)
+    return tool === 'claude' ? claude.restoreBackup(file) : codex.restoreBackup(file)
+  })
 
   ipcMain.handle('provider:test', (_e, input: TestInput) => testProvider(input))
 
@@ -286,21 +300,22 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('router:set', async (_e, tool: ToolId, enabled: boolean) => {
-    if (!(tool === 'claude' || tool === 'codex')) throw new Error('非法的工具类型')
+    assertTool(tool)
     if (typeof enabled !== 'boolean') throw new Error('非法的开关值')
     const store = loadStore()
     if (enabled && !store.current[tool]) throw new Error('请先选择一个供应商，再开启本机路由')
     const router = { claude: store.settings.router?.claude ?? false, codex: store.settings.router?.codex ?? false }
     router[tool] = enabled
-    store.settings.router = router
-    await saveStore(store)
-    if (enabled || router.claude || router.codex) {
+    const needRouter = router.claude || router.codex
+    // 先把路由进程拉起来（端口被占等失败会让本次什么都不写盘），再持久化设置（2026-10-31 审计 #9）
+    if (needRouter) {
       await startRouter().catch((e) => {
         throw new Error(`路由服务启动失败：${(e as Error).message}`)
       })
-    } else if (!router.claude && !router.codex) {
-      stopRouter()
     }
+    store.settings.router = router
+    await saveStore(store)
+    if (!needRouter) stopRouter()
     // 按新模式重写该工具配置（无当前供应商时退回官方配置）
     const provider = store.current[tool] ? store.providers.find((p) => p.id === store.current[tool]) ?? null : null
     if (tool === 'claude') await claude.switchClaude(provider, enabled)
@@ -309,13 +324,9 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('settings:update', async (_e, patch: Partial<AppSettings>) => {
+    // IPC 是安全边界：patch 全字段校验 + 未知键拒绝（2026-10-31 审计）
+    validateSettingsPatch(patch)
     const store = loadStore()
-    if (patch.language !== undefined && patch.language !== 'zh' && patch.language !== 'en') {
-      throw new Error('非法的语言')
-    }
-    if (patch.sidebarCollapsed !== undefined && typeof patch.sidebarCollapsed !== 'boolean') {
-      throw new Error('非法的侧栏折叠状态')
-    }
     store.settings = { ...store.settings, ...patch }
     await saveStore(store)
     applySettings(store.settings)

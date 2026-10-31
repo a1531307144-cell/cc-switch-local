@@ -14,15 +14,16 @@
 - 用户的核心诉求是**安全性**：API Key 全部存本机、代码开源可审计、零遥测零上传。任何"把数据传出去"的功能都与项目定位冲突，不要加。
 - 对标 farion1231/cc-switch（v4.0.21 起为功能参照物）。2026-10-30 用户拍板「功能实现完全相似」为目标分多版走：v0.6.0 交付预设库 / 关键字段写入 / 用量统计 / 本机路由最简版 / 托盘 / 加密备份；**协议转换与聚合模式、MCP、多工具支持、云同步（决定不做，用加密备份文件替代）见 §9**。
 
-## 2. 当前状态（2026-10-31：v0.8.0 视觉重设计版）
+## 2. 当前状态（2026-10-31：v0.8.1 安全加固版）
 
 | 项 | 状态 |
 | --- | --- |
 | TypeScript 类型检查 | ✅ 通过 |
-| 端到端自测（22 步断言） | ✅ 22/22 通过（隔离目录 + 本地 mock 上游，未触碰真实配置） |
-| CDP 实机验证 | ✅ 15 项断言 + 5 图全过：卡面无 Key/端点、拖拽排序持久化、搜索、菜单克隆、导入下拉、侧栏折叠持久化（含刷新后保持）、暗色主题 |
+| 端到端自测（26 步断言） | ✅ 26/26 通过（隔离目录 + 本地 mock 上游，未触碰真实配置） |
+| CDP 实机验证 | ✅ v0.8.0 15 断言+5 图；v0.8.1 复验 6/6（菜单上弹/非法设置拒绝/卡面无 Key 端点） |
 | Windows 打包 | ✅ win-unpacked 实机验证通过，NSIS 由 CI 产出 |
-| 新功能（v0.8.0） | ✅ 图标优先卡片网格（卡面只留图标+名称）、拖拽排序、供应商克隆、搜索过滤、可折叠侧栏、功能区划分（导入收进下拉）、厂商图标扩面至 15 家 |
+| 安全加固（v0.8.1） | ✅ 全量代码审计（docs/code-review-2026-10-31.md）12 项全部处置：路由来源校验（Origin/Host/OPTIONS）、settings:update 全字段校验、tool 参数白名单、auth.json 损坏中止、TOML 多行字符串掩码、store 加载防线、响应体空闲超时、CI npm ci 等 |
+| 新功能（v0.8.0） | ✅ 图标优先卡片网格、拖拽排序、供应商克隆、搜索过滤、可折叠侧栏、厂商图标扩面至 15 家 |
 | GitHub 仓库 | ✅ `a1531307144-cell/cc-switch-local`（公开） |
 
 **对标 cc-switch 仍未做的**（见 §9 路线图）：路由协议转换、聚合模式、会话阅读器、MCP/Skills/提示词、多工具、主密码加密。
@@ -53,7 +54,7 @@ src/
     presets.ts           # 预设合并层：精选中文官方条目 + presets-data.ts（256 条生成数据，去重）
     presets-data.ts      # scripts/extract-presets.mjs 从 cc-switch（MIT）自动生成，勿手改
     updater.ts           # electron-updater（打包后启用，失败静默）
-    selftest.ts          # 端到端自测脚本（22 步）
+    selftest.ts          # 端到端自测脚本（26 步）
   preload/index.ts       # contextBridge 暴露 window.api（类型 = shared.Api）
   renderer/              # React UI：App + ProviderCard（v0.8.0 图标优先网格卡片，可拖拽）/ ProviderForm / SettingsPanel / UsageDashboard / Icons（内联 SVG）/ ui（VendorChip/VendorLogo/Modal）
 ```
@@ -199,6 +200,7 @@ model_reasoning_effort = "low"
 19. **out/ 没构建就跑 `npx electron . --selftest` 会静默挂死**（2026-10-31 实测）：Electron 找不到 main 后弹系统错误对话框且进程不退出，管道里看不到任何输出。自测前必须先 `npm run build`（`npm run selftest` 自带 build），并用 `taskkill //PID <pid> //F`（Git Bash 双斜杠）清理挂死进程。
 20. **克隆功能与备份导入去重的相互作用**：备份导入按 `tool|baseUrl|apiKey` 去重，而克隆体与原条目三元组完全相同——删掉原条目再导入备份会被它的克隆挡住（跳过而不是找回）。这是设计行为，不是 bug；自测的备份导入步骤因此选一条**没有克隆体**的供应商做受删对象（2026-10-31 自测抓到）。
 21. **CDP 直调 `window.api.settingsUpdate` 不会刷新 React 状态**：主题等由 App 从 store 派生的界面必须 reload 后才生效（真实 UI 走 select→onChanged→refresh 所以没事）。CDP 验证这类设置一律「settingsUpdate + Page.reload + 断言」。
+22. **自测夹具重置顺序**：先 `rm -rf home data` 再按 §7 重建全部三个文件——先建后删会静默丢夹具，Codex 步骤会以「空 config.toml」起步并报「顶层注释丢失」（2026-10-31 实测）。
 
 ## 9. 路线图（2026-10-31 更新）
 
