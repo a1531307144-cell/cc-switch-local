@@ -517,6 +517,12 @@ code {
   margin-bottom: 7px;
 }
 
+/* 名称/副标题/结果胶囊的包装层：网格模式下不参与布局（等价于直接展开），
+   长条模式下成为中间伸缩列（v0.8.6） */
+.pcard-main {
+  display: contents;
+}
+
 .vendor-logo {
   width: 44px;
   height: 44px;
@@ -601,6 +607,73 @@ code {
 .pcard:hover .pcard-actions,
 .pcard:focus-within .pcard-actions {
   opacity: 1;
+}
+
+/* ---------- 长条视图（v0.8.6）：整行横条，图标居左、信息居中伸缩、操作居右 ---------- */
+.provider-grid.as-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.as-list .pcard {
+  flex-direction: row;
+  align-items: center;
+  min-height: 0;
+  padding: 9px 16px;
+}
+
+.as-list .pcard-logo {
+  height: auto;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.as-list .vendor-logo,
+.as-list .vendor-tile {
+  width: 30px;
+  height: 30px;
+}
+
+.as-list .vendor-tile {
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.as-list .pcard-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  margin: 0 12px;
+}
+
+.as-list .pcard-name {
+  text-align: left;
+  -webkit-line-clamp: 1;
+  white-space: nowrap;
+}
+
+.as-list .pcard-sub {
+  text-align: left;
+}
+
+.as-list .pcard-note {
+  margin-top: 4px;
+  align-self: flex-start;
+}
+
+/* 当前项角标在长条上会与操作区重叠，禁用态「使用中」按钮已足够标识 */
+.as-list .pcard-inuse {
+  display: none;
+}
+
+.as-list .pcard-actions {
+  margin-top: 0;
+  padding-top: 0;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .icon-btn {

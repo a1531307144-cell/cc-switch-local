@@ -49,6 +49,8 @@ export interface AppSettings {
   language?: Lang
   /** 侧栏折叠（v0.8.0 起；缺省展开） */
   sidebarCollapsed?: boolean
+  /** 供应商列表视图样式（v0.8.6 起；缺省 grid 方块，list 为横向长条） */
+  providerView?: 'grid' | 'list'
   /** 本机路由模式（每工具独立开关；port 缺省 15731；缺省 false） */
   router?: {
     claude: boolean

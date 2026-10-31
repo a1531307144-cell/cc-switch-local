@@ -177,6 +177,8 @@ export const STRINGS = {
   'zone.searchPh': { zh: '搜索供应商…', en: 'Search providers…' },
   'zone.dragHint': { zh: '拖动卡片可调整顺序，把最常用的放最前面', en: 'Drag cards to reorder — put favorites first' },
   'zone.noneMatch': { zh: '没有匹配「{q}」的供应商', en: 'No providers match "{q}"' },
+  'zone.viewList': { zh: '切换为长条视图', en: 'Switch to list view' },
+  'zone.viewGrid': { zh: '切换为方块视图', en: 'Switch to grid view' },
 
   // ── 供应商卡片（图标优先的紧凑卡片） ──
   'card.more': { zh: '更多操作', en: 'More actions' },

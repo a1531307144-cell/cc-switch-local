@@ -10,7 +10,7 @@ import SettingsPanel from './components/SettingsPanel'
 import SessionsView from './components/SessionsView'
 import McpView from './components/McpView'
 import UsageDashboard from './components/UsageDashboard'
-import { IconBook, IconChart, IconChevronLeft, IconChevronRight, IconGear, IconLock, IconPlug, IconSearch } from './components/Icons'
+import { IconBook, IconChart, IconChevronLeft, IconChevronRight, IconGear, IconGrid, IconLock, IconPlug, IconRows, IconSearch } from './components/Icons'
 import logoUrl from './assets/logo.png'
 
 type View = ToolId | 'usage' | 'settings' | 'sessions' | 'mcp'
@@ -244,6 +244,17 @@ export default function App() {
   const toggleSidebar = async () => {
     try {
       await window.api.settingsUpdate({ sidebarCollapsed: !collapsed })
+      await refresh()
+    } catch (e) {
+      notify((e as Error).message, 'err')
+    }
+  }
+
+  /** 供应商视图样式：方块网格 / 横向长条（持久化到设置） */
+  const listView = store.settings.providerView === 'list'
+  const toggleView = async () => {
+    try {
+      await window.api.settingsUpdate({ providerView: listView ? 'grid' : 'list' })
       await refresh()
     } catch (e) {
       notify((e as Error).message, 'err')
@@ -660,6 +671,15 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                  <button
+                    type="button"
+                    className="btn sm icon-btn"
+                    onClick={toggleView}
+                    title={listView ? tr('zone.viewGrid') : tr('zone.viewList')}
+                    aria-label={listView ? tr('zone.viewGrid') : tr('zone.viewList')}
+                  >
+                    {listView ? <IconGrid /> : <IconRows />}
+                  </button>
                   <div className="search">
                     <IconSearch />
                     <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr('zone.searchPh')} />
@@ -682,7 +702,7 @@ export default function App() {
               ) : (
                 <>
                   {providers.length > 1 && <div className="drag-hint muted small">{tr('zone.dragHint')}</div>}
-                  <div className="provider-grid">
+                  <div className={`provider-grid${listView ? ' as-list' : ''}`}>
                     {shown.map((p) => (
                       <ProviderCard
                         key={p.id}

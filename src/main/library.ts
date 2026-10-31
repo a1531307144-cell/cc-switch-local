@@ -12,13 +12,16 @@ const THEMES = ['system', 'light', 'dark']
 export function validateSettingsPatch(patch: Partial<AppSettings>): void {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('非法的设置内容')
   for (const k of Object.keys(patch)) {
-    if (!['autoUpdate', 'autoStart', 'theme', 'language', 'sidebarCollapsed', 'router'].includes(k)) {
+    if (!['autoUpdate', 'autoStart', 'theme', 'language', 'sidebarCollapsed', 'providerView', 'router'].includes(k)) {
       throw new Error(`非法的设置项：${k}`)
     }
   }
   if (patch.autoUpdate !== undefined && typeof patch.autoUpdate !== 'boolean') throw new Error('非法的自动更新开关')
   if (patch.autoStart !== undefined && typeof patch.autoStart !== 'boolean') throw new Error('非法的自启开关')
   if (patch.sidebarCollapsed !== undefined && typeof patch.sidebarCollapsed !== 'boolean') throw new Error('非法的侧栏折叠状态')
+  if (patch.providerView !== undefined && patch.providerView !== 'grid' && patch.providerView !== 'list') {
+    throw new Error('非法的列表视图样式')
+  }
   if (patch.theme !== undefined && !THEMES.includes(patch.theme)) throw new Error('非法的主题')
   if (patch.language !== undefined && patch.language !== 'zh' && patch.language !== 'en') throw new Error('非法的语言')
   if (patch.router !== undefined) {

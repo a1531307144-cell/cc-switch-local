@@ -139,15 +139,17 @@ export default function ProviderCard({
       <div className="pcard-logo">
         <VendorLogo vendor={vendor} fallbackText={provider.name} />
       </div>
-      <div className="pcard-name" title={provider.name}>
-        {provider.name}
+      <div className="pcard-main">
+        <div className="pcard-name" title={provider.name}>
+          {provider.name}
+        </div>
+        {vendor && <div className="pcard-sub">{vendor.name}</div>}
+        {note && (
+          <button type="button" className={`pcard-note ${note.cls}`} title={note.text} onClick={() => { setResult(null); setBalance(null) }}>
+            {note.text}
+          </button>
+        )}
       </div>
-      {vendor && <div className="pcard-sub">{vendor.name}</div>}
-      {note && (
-        <button type="button" className={`pcard-note ${note.cls}`} title={note.text} onClick={() => { setResult(null); setBalance(null) }}>
-          {note.text}
-        </button>
-      )}
       <div className="pcard-actions">
         {isCurrent ? (
           <button className="btn primary sm" disabled>

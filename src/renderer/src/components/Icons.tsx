@@ -56,6 +56,26 @@ export function IconSearch() {
   )
 }
 
+export function IconGrid() {
+  return (
+    <svg {...base}>
+      <rect x="2.2" y="2.2" width="4.9" height="4.9" rx="1.4" />
+      <rect x="8.9" y="2.2" width="4.9" height="4.9" rx="1.4" />
+      <rect x="2.2" y="8.9" width="4.9" height="4.9" rx="1.4" />
+      <rect x="8.9" y="8.9" width="4.9" height="4.9" rx="1.4" />
+    </svg>
+  )
+}
+
+export function IconRows() {
+  return (
+    <svg {...base}>
+      <rect x="2.2" y="2.8" width="11.6" height="4.2" rx="1.4" />
+      <rect x="2.2" y="9" width="11.6" height="4.2" rx="1.4" />
+    </svg>
+  )
+}
+
 export function IconBook() {
   return (
     <svg {...base}>
