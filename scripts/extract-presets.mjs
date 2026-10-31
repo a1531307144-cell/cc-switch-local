@@ -2,7 +2,7 @@
  * 从 farion1231/cc-switch（MIT License）的预设数据中提取端点配置，
  * 生成本项目的 src/main/presets-data.ts。
  *
- * 用法：node scripts/extract-presets.mjs <claudePresets.ts> <codexPresets.ts>
+ * 用法：node scripts/extract-presets.mjs <claudePresets.ts> <codexPresets.ts> [searchAliases.ts]
  * 仅收录公开端点 URL（本就是公开信息），不包含任何密钥。
  * 上游数据会持续更新，需要刷新预设时重跑本脚本即可。
  */
@@ -13,9 +13,9 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const TOML = require('@iarna/toml')
 
-const [claudeFile, codexFile] = process.argv.slice(2)
+const [claudeFile, codexFile, aliasesFile] = process.argv.slice(2)
 if (!claudeFile || !codexFile) {
-  console.error('用法：node scripts/extract-presets.mjs <claudePresets.ts> <codexPresets.ts>')
+  console.error('用法：node scripts/extract-presets.mjs <claudePresets.ts> <codexPresets.ts> [searchAliases.ts]')
   process.exit(1)
 }
 
@@ -39,7 +39,7 @@ function loadPresets(file, exportName) {
   const mod = { exports: {} }
   new Function('module', 'exports', js)(mod, mod.exports)
   const arr = mod.exports[exportName]
-  if (!Array.isArray(arr)) throw new Error(`${file} 中未找到导出 ${exportName}`)
+  if (!arr || typeof arr !== 'object') throw new Error(`${file} 中未找到导出 ${exportName}`)
   return arr
 }
 
@@ -123,6 +123,13 @@ for (const p of codexRaw) {
 }
 
 // ---------- 生成 ----------
+// 搜索别名（v0.8.12）：上游 presetSearchAliases.ts 的 中文名/公司名/旧名，并入 searchKey
+let searchAliases = {}
+if (aliasesFile) {
+  const raw = loadPresets(aliasesFile, 'PRESET_SEARCH_ALIASES')
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) searchAliases = raw
+}
+
 const fmt = (list) =>
   list
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -134,11 +141,12 @@ const fmt = (list) =>
           return ''
         }
       })()
+      const alias = typeof searchAliases[p.name] === 'string' ? ` ${searchAliases[p.name]}` : ''
       const props = [`tool: '${p.tool}'`, `name: ${JSON.stringify(p.name)}`, `baseUrl: ${JSON.stringify(p.baseUrl)}`]
       if (p.keyType) props.push(`keyType: '${p.keyType}'`)
       if (p.wireApi) props.push(`wireApi: '${p.wireApi}'`)
       if (p.model) props.push(`model: ${JSON.stringify(p.model)}`)
-      props.push(`searchKey: ${JSON.stringify(`${p.name} ${domain}`.toLowerCase())}`)
+      props.push(`searchKey: ${JSON.stringify(`${p.name} ${domain}${alias}`.toLowerCase())}`)
       return `  { ${props.join(', ')} }`
     })
     .join(',\n')

@@ -33,6 +33,14 @@ const CURATED_PRESETS: Preset[] = [
   },
   {
     tool: 'claude',
+    name: '硅基流动 SiliconFlow',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    model: 'deepseek-ai/DeepSeek-V4-Flash',
+    protocol: 'openai',
+    notes: 'OpenAI 兼容端点，经本机路由协议转换后供 Claude Code 使用；支持官方余额查询'
+  },
+  {
+    tool: 'claude',
     name: '阿里云百炼 Qwen',
     baseUrl: 'https://dashscope.aliyuncs.com/api/v2/apps/claude-code/proxy',
     model: 'qwen3-coder-plus',
