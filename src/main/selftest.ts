@@ -24,6 +24,7 @@ import { listGroups, saveGroup, applyGroup, deleteGroup } from './groups'
 import { installFromGithub, listSkills, readSkill, deleteSkill, parseFrontmatter } from './skills'
 import { anthropicToResponses, responsesToAnthropic } from './convert'
 import { mcpDelete, mcpList, mcpSave } from './mcp'
+import { fetchModels } from './models'
 import http from 'node:http'
 import { execSync } from 'node:child_process'
 
@@ -177,10 +178,11 @@ export async function runSelfTest(): Promise<void> {
       assertThrows(() => validateSettingsPatch({ router: { claude: 'yes' } as never }), '非法路由开关应拒绝')
       assertThrows(() => validateSettingsPatch({ router: { claude: true, codex: false, port: 99999 } as never }), '越界端口应拒绝')
       assertThrows(() => validateSettingsPatch({ evil: 1 } as never), '未知键应拒绝')
+      assertThrows(() => validateSettingsPatch({ accent: 'neon' as never }), '非法配色应拒绝')
       validateSettingsPatch({ sidebarCollapsed: true })
       validateSettingsPatch({ providerView: 'list' })
       validateSettingsPatch({ router: { claude: true, codex: false, port: 15731 } })
-      validateSettingsPatch({ theme: 'dark', language: 'en' })
+      validateSettingsPatch({ theme: 'dark', language: 'en', accent: 'voyage' })
     })
 
     await step('Claude 切换 A：写 AUTH_TOKEN，保留 CUSTOM，删除 API_KEY，产生备份', async () => {
@@ -691,6 +693,221 @@ export async function runSelfTest(): Promise<void> {
         assert(received.length === 1, `上游只应收到 1 个请求，实际 ${received.length}（非法请求不得透传）`)
       } finally {
         stopRouter()
+        up.close()
+      }
+    })
+
+    await step('模型映射：切换写入 ANTHROPIC_DEFAULT_*_MODEL（1M 标记/显示名），清空后 env 键全部回收（v0.8.18）', async () => {
+      const s = loadStore()
+      const prevCurrent = s.current.claude
+      const pm = {
+        id: newId(),
+        tool: 'claude' as const,
+        name: '映射家',
+        baseUrl: 'https://mapping.example.com',
+        apiKey: 'sk-mapping-000000001',
+        keyType: 'auth_token' as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        model: 'deepseek-chat',
+        model1m: true,
+        modelMapping: {
+          sonnet: { model: 'deepseek-chat', display: 'DeepSeek V3', ctx1m: true },
+          opus: { model: 'deepseek-reasoner' },
+          subagent: { model: 'deepseek-chat', ctx1m: true }
+        }
+      }
+      s.providers.unshift(pm)
+      s.current.claude = pm.id
+      await saveStore(s)
+      try {
+        await claude.switchClaude(pm, true)
+        const env = ((await readJson(claudeSettings)).env ?? {}) as Record<string, unknown>
+        assert(env.ANTHROPIC_MODEL === 'deepseek-chat [1m]', `ANTHROPIC_MODEL 应带 1M 标记，实际 ${String(env.ANTHROPIC_MODEL)}`)
+        assert(env.ANTHROPIC_DEFAULT_SONNET_MODEL === 'deepseek-chat [1m]', `sonnet 应带 1M 标记，实际 ${String(env.ANTHROPIC_DEFAULT_SONNET_MODEL)}`)
+        assert(env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME === 'DeepSeek V3', 'sonnet 显示名应写入 _NAME 键')
+        assert(env.ANTHROPIC_DEFAULT_OPUS_MODEL === 'deepseek-reasoner', 'opus 映射应写入')
+        assert(env.CLAUDE_CODE_SUBAGENT_MODEL === 'deepseek-chat [1m]', 'subagent 映射应写入')
+        assert(env.ANTHROPIC_DEFAULT_SUBAGENT_MODEL_NAME === undefined, 'subagent 档不应有 _NAME 键')
+        // 清空映射再切换：本工具托管的 env 键全部移除
+        await claude.switchClaude({ ...pm, model: undefined, model1m: undefined, modelMapping: undefined }, true)
+        const env2 = ((await readJson(claudeSettings)).env ?? {}) as Record<string, unknown>
+        assert(
+          env2.ANTHROPIC_MODEL === undefined &&
+            env2.ANTHROPIC_DEFAULT_SONNET_MODEL === undefined &&
+            env2.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME === undefined &&
+            env2.ANTHROPIC_DEFAULT_OPUS_MODEL === undefined &&
+            env2.CLAUDE_CODE_SUBAGENT_MODEL === undefined,
+          '清空映射后映射 env 键应全部移除'
+        )
+      } finally {
+        const s2 = loadStore()
+        s2.providers = s2.providers.filter((p) => p.id !== pm.id)
+        s2.current.claude = prevCurrent
+        await saveStore(s2)
+      }
+    })
+
+    await step('本机路由：模型映射改写 + [1m] 剥离 + UA/Header/Body 覆盖（v0.8.18）', async () => {
+      const seen: { model: string | null; ua: string | null; xprov: string | null; body: Record<string, unknown> }[] = []
+      const up = http.createServer((req, res) => {
+        let b = ''
+        req.on('data', (c: Buffer) => (b += c))
+        req.on('end', () => {
+          let body: Record<string, unknown> = {}
+          try {
+            body = JSON.parse(b) as Record<string, unknown>
+          } catch {
+            /* 忽略 */
+          }
+          seen.push({
+            model: typeof body.model === 'string' ? body.model : null,
+            ua: (req.headers['user-agent'] as string) ?? null,
+            xprov: (req.headers['x-provider'] as string) ?? null,
+            body
+          })
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ id: 'msg_selftest', type: 'message', role: 'assistant', model: body.model ?? '', content: [], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } }))
+        })
+      })
+      await new Promise<void>((r) => up.listen(0, '127.0.0.1', () => r()))
+      const addr = up.address() as { port: number }
+      const s = loadStore()
+      const prevCurrent = s.current.claude
+      const pm = {
+        id: newId(),
+        tool: 'claude' as const,
+        name: '改写家',
+        baseUrl: `http://127.0.0.1:${addr.port}`,
+        apiKey: 'sk-rewrite-00000001',
+        keyType: 'auth_token' as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        modelMapping: {
+          sonnet: { model: 'deepseek-chat' },
+          opus: { model: 'opus-y' },
+          subagent: { model: 'custom-agent-sonnet' }
+        },
+        customUserAgent: 'ccsl-selftest/1.0',
+        headerOverrides: { 'X-Provider': 'ccsl' },
+        bodyOverrides: { temperature: 0.2, max_tokens: 99 }
+      }
+      s.providers.unshift(pm)
+      s.current.claude = pm.id
+      await saveStore(s)
+      await startRouter()
+      try {
+        const hit = async (model: string): Promise<void> => {
+          const r = await fetch(`http://127.0.0.1:${routerPort()}/claude/v1/messages`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'user-agent': 'claude-cli/2.0.28 (external, cli)' },
+            body: JSON.stringify({ model, max_tokens: 128, messages: [{ role: 'user', content: 'hi' }] })
+          })
+          assert(r.status === 200, `请求 ${model} 应 200，实际 ${r.status}：${await r.text()}`)
+        }
+        await hit('claude-sonnet-4-5 [1m]')
+        assert(seen[0]?.model === 'deepseek-chat', `sonnet 档应改写且 [1m] 剥离，实际 ${String(seen[0]?.model)}`)
+        assert(seen[0]?.ua === 'ccsl-selftest/1.0', `UA 应被覆盖，实际 ${String(seen[0]?.ua)}`)
+        assert(seen[0]?.xprov === 'ccsl', 'Header 覆盖应注入（键名大小写不敏感）')
+        assert(seen[0]?.body.temperature === 0.2 && seen[0]?.body.max_tokens === 99, 'Body 覆盖应浅合并进请求体')
+        await hit('claude-opus-4-1')
+        assert(seen[1]?.model === 'opus-y', `opus 档应改写，实际 ${String(seen[1]?.model)}`)
+        await hit('claude-fable-1')
+        assert(seen[2]?.model === 'opus-y', `fable 档未配置时应归入 opus 档，实际 ${String(seen[2]?.model)}`)
+        await hit('custom-agent-sonnet')
+        assert(seen[3]?.model === 'custom-agent-sonnet', `子代理精确匹配应保持原样（免被档位关键词吞掉），实际 ${String(seen[3]?.model)}`)
+        await hit('totally-unknown-model')
+        assert(seen[4]?.model === 'totally-unknown-model', `未命中映射应保持原样（默认模型由 env 负责），实际 ${String(seen[4]?.model)}`)
+      } finally {
+        stopRouter()
+        up.close()
+        const s2 = loadStore()
+        s2.providers = s2.providers.filter((p) => p.id !== pm.id)
+        s2.current.claude = prevCurrent
+        await saveStore(s2)
+      }
+    })
+
+    await step('本机路由：完整 URL（fullUrl）原样转发，不拼接 /v1/* 路径（v0.8.18）', async () => {
+      const seen: string[] = []
+      const up = http.createServer((req, res) => {
+        seen.push(req.url ?? '')
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: true }))
+      })
+      await new Promise<void>((r) => up.listen(0, '127.0.0.1', () => r()))
+      const addr = up.address() as { port: number }
+      const s = loadStore()
+      const prevCurrent = s.current.claude
+      const pm = {
+        id: newId(),
+        tool: 'claude' as const,
+        name: '完整URL家',
+        baseUrl: `http://127.0.0.1:${addr.port}/fixed/endpoint`,
+        apiKey: 'sk-fullurl-0000001',
+        keyType: 'auth_token' as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        fullUrl: true
+      }
+      s.providers.unshift(pm)
+      s.current.claude = pm.id
+      await saveStore(s)
+      await startRouter()
+      try {
+        const r = await fetch(`http://127.0.0.1:${routerPort()}/claude/v1/messages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{"model":"m"}'
+        })
+        assert(r.status === 200, `应 200，实际 ${r.status}`)
+        assert(seen[0] === '/fixed/endpoint', `完整 URL 应原样使用 baseUrl，实际收到 ${String(seen[0])}`)
+      } finally {
+        stopRouter()
+        up.close()
+        const s2 = loadStore()
+        s2.providers = s2.providers.filter((p) => p.id !== pm.id)
+        s2.current.claude = prevCurrent
+        await saveStore(s2)
+      }
+    })
+
+    await step('模型列表：/v1/models 解析排序 + api_key 鉴权头 + 401 报错（v0.8.18）', async () => {
+      const seen: { url: string; xapikey: string | null; auth: string | null; av: string | null }[] = []
+      const GOOD_KEY = 'sk-list-000000001'
+      const up = http.createServer((req, res) => {
+        const key = (req.headers['x-api-key'] as string) ?? ((req.headers.authorization as string) ?? '').replace(/^Bearer /, '')
+        seen.push({
+          url: req.url ?? '',
+          xapikey: (req.headers['x-api-key'] as string) ?? null,
+          auth: (req.headers.authorization as string) ?? null,
+          av: (req.headers['anthropic-version'] as string) ?? null
+        })
+        if (key !== GOOD_KEY) {
+          res.writeHead(401, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ error: { message: 'bad key' } }))
+          return
+        }
+        if (req.url === '/v1/models') {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ data: [{ id: 'glm-4.7' }, { id: 'glm-4.6' }] }))
+        } else {
+          res.writeHead(404, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ error: { message: 'no such path' } }))
+        }
+      })
+      await new Promise<void>((r) => up.listen(0, '127.0.0.1', () => r()))
+      const addr = up.address() as { port: number }
+      try {
+        const r1 = await fetchModels({ baseUrl: `http://127.0.0.1:${addr.port}`, apiKey: 'sk-list-000000001', keyType: 'api_key', protocol: 'anthropic' })
+        assert(r1.ok === true && r1.models?.join(',') === 'glm-4.6,glm-4.7', `应解析并排序模型列表，实际 ${JSON.stringify(r1)}`)
+        assert(seen[0]?.xapikey === 'sk-list-000000001' && seen[0]?.av === '2023-06-01', 'api_key 型应带 x-api-key 与 anthropic-version')
+        const r2 = await fetchModels({ baseUrl: `http://127.0.0.1:${addr.port}/v9`, apiKey: GOOD_KEY, keyType: 'auth_token' })
+        assert(r2.ok === true && r2.models?.length === 2, `版本段结尾应先试 /models 再兜底，实际 ${JSON.stringify(r2)}`)
+        assert(seen[1]?.url === '/v9/models' && seen[2]?.url === '/v1/models', '版本段结尾应先试 /models 再兜底剥段 /v1/models')
+        const r3 = await fetchModels({ baseUrl: `http://127.0.0.1:${addr.port}`, apiKey: 'sk-bad', keyType: 'auth_token' })
+        assert(r3.ok === false && (r3.message ?? '').includes('鉴权'), `401 应报鉴权失败，实际 ${r3.message}`)
+      } finally {
         up.close()
       }
     })

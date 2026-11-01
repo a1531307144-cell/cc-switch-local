@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
-import type { DeeplinkResult, Lang, Preset, Provider, RouterStatus, StoreShape, ToolId, ToolStatus } from '../../shared/types'
+import type { DeeplinkResult, Lang, ModelRole, Preset, Provider, RouterStatus, StoreShape, ToolId, ToolStatus } from '../../shared/types'
 import { t } from '../../shared/i18n'
 import { detectVendor } from '../../shared/vendors'
 import { aggregateEntries } from '../../shared/aggregate'
+import { resolveAccent, type AccentVars } from '../../shared/themes'
 import ProviderCard from './components/ProviderCard'
-import ProviderForm, { emptyDraft, type FormDraft } from './components/ProviderForm'
+import ProviderForm, { MAPPING_ROLES, emptyDraft, mappingToDraft, type FormDraft } from './components/ProviderForm'
 import SettingsPanel from './components/SettingsPanel'
 import SessionsView from './components/SessionsView'
 import McpView from './components/McpView'
@@ -18,6 +19,63 @@ import { IconBook, IconChart, IconChevronLeft, IconChevronRight, IconCube, IconG
 import logoUrl from './assets/logo.png'
 
 type View = ToolId | 'usage' | 'settings' | 'sessions' | 'mcp' | 'prompts' | 'groups' | 'skills' | 'add' | 'form'
+
+/** 把配色主题的令牌值内联到根元素（v0.8.18）：随明暗模式取对应一套；bg/panel/chrome 仅深色撞色主题提供 */
+function applyAccentVars(theme: { light: AccentVars; dark: AccentVars }, dark: boolean): void {
+  const el = document.documentElement
+  const v = dark ? theme.dark : theme.light
+  const put = (k: string, val: string | undefined): void => {
+    if (val) el.style.setProperty(k, val)
+    else el.style.removeProperty(k)
+  }
+  put('--accent', v.accent)
+  put('--accent-hover', v.accentHover)
+  put('--accent-ink', v.accentInk)
+  put('--accent-soft', v.accentSoft)
+  put('--bg', v.bg)
+  put('--panel', v.panel)
+  put('--chrome', v.chrome)
+}
+
+/** 表单草稿 → providerSave 的高级设置字段（v0.8.18；空条目剔除，JSON 文本已在上层校验过） */
+function advancedFromDraft(d: FormDraft): {
+  modelMapping?: Record<ModelRole, { model: string; display?: string; ctx1m?: boolean }>
+  model1m?: boolean
+  fullUrl?: boolean
+  customUserAgent?: string
+  headerOverrides?: Record<string, string>
+  bodyOverrides?: Record<string, unknown>
+} {
+  const entries = MAPPING_ROLES.map((role) => {
+    const e = d.modelMapping[role]
+    const model = e.model.trim()
+    if (!model) return null
+    const entry: { model: string; display?: string; ctx1m?: boolean } = { model }
+    const display = e.display.trim()
+    if (display) entry.display = display
+    if (e.ctx1m) entry.ctx1m = true
+    return [role, entry] as const
+  }).filter((x): x is NonNullable<typeof x> => !!x)
+  const parseJson = <T,>(s: string): T | undefined => {
+    if (!s.trim()) return undefined
+    try {
+      const j = JSON.parse(s) as unknown
+      return j && typeof j === 'object' && !Array.isArray(j) ? (j as T) : undefined
+    } catch {
+      return undefined
+    }
+  }
+  return {
+    modelMapping: entries.length
+      ? (Object.fromEntries(entries) as Record<ModelRole, { model: string; display?: string; ctx1m?: boolean }>)
+      : undefined,
+    model1m: d.model1m || undefined,
+    fullUrl: d.fullUrl || undefined,
+    customUserAgent: d.customUserAgent.trim() || undefined,
+    headerOverrides: parseJson<Record<string, string>>(d.headerOverrides),
+    bodyOverrides: parseJson<Record<string, unknown>>(d.bodyOverrides)
+  }
+}
 
 /** 主密码解锁屏（锁定态下渲染层只显示这个） */
 function UnlockScreen({ lang, onUnlocked }: { lang: Lang; onUnlocked: () => void }) {
@@ -232,16 +290,18 @@ export default function App() {
   }, [])
 
   const theme = store?.settings.theme
+  const accent = store?.settings.accent
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const apply = () => {
       const dark = theme === 'dark' || ((theme === undefined || theme === 'system') && mq.matches)
       document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+      applyAccentVars(resolveAccent(accent), dark)
     }
     apply()
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
-  }, [theme])
+  }, [theme, accent])
 
   if (!store) return <div className="loading">{tr('app.loading')}</div>
   if (store.locked) {
@@ -371,6 +431,7 @@ export default function App() {
   }
 
   const save = async (d: FormDraft) => {
+    const claudeOnly = d.tool === 'claude'
     await window.api.providerSave({
       id: d.id,
       tool: d.tool,
@@ -378,12 +439,13 @@ export default function App() {
       baseUrl: d.baseUrl.trim(),
       apiKey: d.apiKey.trim(),
       keyType: d.keyType,
-      protocol: d.tool === 'claude' ? d.protocol : undefined,
-      alias: d.tool === 'claude' ? d.alias.trim() : undefined,
+      protocol: claudeOnly ? d.protocol : undefined,
+      alias: claudeOnly ? d.alias.trim() : undefined,
       model: d.model.trim(),
       wireApi: d.wireApi,
       notes: d.notes.trim(),
-      icon: d.icon || undefined
+      icon: d.icon || undefined,
+      ...(claudeOnly ? advancedFromDraft(d) : {})
     })
     notify(d.id ? tr('toast.saved') : tr('toast.added'))
     setDraft(null)
@@ -405,7 +467,9 @@ export default function App() {
         apiKey: cur.apiKey,
         keyType: cur.keyType,
         model: cur.model ?? '',
-        wireApi: cur.wireApi ?? 'responses'
+        wireApi: cur.wireApi ?? 'responses',
+        ...(cur.model1m ? { model1m: true } : {}),
+        ...(cur.modelMapping ? { modelMapping: mappingToDraft(cur.modelMapping) } : {})
       })
     } catch (e) {
       notify((e as Error).message, 'err')
@@ -788,7 +852,13 @@ export default function App() {
                             model: x.model ?? '',
                             wireApi: x.wireApi ?? (x.tool === 'codex' ? 'responses' : 'chat'),
                             notes: x.notes ?? '',
-                            icon: x.icon ?? ''
+                            icon: x.icon ?? '',
+                            model1m: x.model1m === true,
+                            fullUrl: x.fullUrl === true,
+                            customUserAgent: x.customUserAgent ?? '',
+                            headerOverrides: x.headerOverrides ? JSON.stringify(x.headerOverrides, null, 2) : '',
+                            bodyOverrides: x.bodyOverrides ? JSON.stringify(x.bodyOverrides, null, 2) : '',
+                            modelMapping: mappingToDraft(x.modelMapping)
                           }, 'tool')
                         }
                         onClone={clone}

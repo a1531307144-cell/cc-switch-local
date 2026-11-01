@@ -19,6 +19,7 @@
   --accent-hover: #5f8270;
   --accent-ink: #52735e; /* 浅底上作为文字/图标的深绿 */
   --accent-soft: rgba(107, 143, 119, 0.14);
+  --accent-contrast: #ffffff; /* accent 底上的文字/图标（配色主题统一切换） */
 
   /* 语义状态色（浅底深字） */
   --ok: #16a34a;
@@ -53,11 +54,12 @@
   --overlay: rgba(0, 0, 0, 0.6);
   --chip: rgba(255, 255, 255, 0.1);
 
-  /* 暗色强调色：亮鼠尾草绿（亮底深字的按钮 + 暗底亮字均有足够对比） */
-  --accent: #9dbba3;
-  --accent-hover: #accbb2;
+  /* 暗色强调色：中等饱和绿（白字可读，与配色主题注入值一致）；ink 为亮色调供暗底文字 */
+  --accent: #4f9569;
+  --accent-hover: #5da678;
   --accent-ink: #9dbba3;
   --accent-soft: rgba(157, 187, 163, 0.16);
+  --accent-contrast: #ffffff;
 
   --ok: #4ade80;
   --ok-ink: #4ade80;

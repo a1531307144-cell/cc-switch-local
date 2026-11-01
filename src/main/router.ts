@@ -155,6 +155,41 @@ function readBody(req: http.IncomingMessage): Promise<Buffer> {
 
 const HOP_HEADERS = new Set(['host', 'content-length', 'connection', 'keep-alive', 'transfer-encoding', 'upgrade'])
 
+/** Claude Code 的本地 1M 能力标记（「 [1m]」后缀，大小写不敏感），上游不认识，转发前剥离 */
+const ONE_M_SUFFIX_RE = /\s*\[1m\]\s*$/i
+
+function stripOneM(model: string): string {
+  return model.replace(ONE_M_SUFFIX_RE, '').trimEnd()
+}
+
+/**
+ * 按供应商的模型映射改写请求模型名（v0.8.18，对齐原版 cc-switch 的档位规则）：
+ * fable 未单独配置时归入 opus 档（与 Claude Code 官方降级方向一致）；
+ * 命中子代理精确匹配时保持原样；绝不改写为默认模型——默认模型由 env（ANTHROPIC_MODEL）
+ * 负责，这里再兜底会破坏聚合模式下的多模型寻址。
+ */
+function mappedModelOf(rawModel: string, provider: Provider): string {
+  const bare = stripOneM(rawModel)
+  const mm = provider.modelMapping
+  if (!mm) return bare
+  const lower = bare.toLowerCase()
+  const sub = mm.subagent?.model ? stripOneM(mm.subagent.model) : ''
+  if (sub && bare === sub) return bare
+  if (lower.includes('fable')) {
+    const target = mm.fable?.model || mm.opus?.model
+    if (target) return stripOneM(target)
+  }
+  if (lower.includes('haiku') && mm.haiku?.model) return stripOneM(mm.haiku.model)
+  if (lower.includes('opus') && mm.opus?.model) return stripOneM(mm.opus.model)
+  if (lower.includes('sonnet') && mm.sonnet?.model) return stripOneM(mm.sonnet.model)
+  return bare
+}
+
+/** 请求体改写是否必要（避免无映射时白白 parse/stringify） */
+function needsBodyRewrite(provider: Provider, aggregateHit: { model: string } | null): boolean {
+  return !!aggregateHit || !!provider.modelMapping || !!provider.bodyOverrides
+}
+
 function buildUpstreamHeaders(tool: ToolId, provider: Provider, req: http.IncomingMessage): Record<string, string> {
   const headers: Record<string, string> = {}
   for (const [k, v] of Object.entries(req.headers)) {
@@ -167,6 +202,14 @@ function buildUpstreamHeaders(tool: ToolId, provider: Provider, req: http.Incomi
     else headers['authorization'] = `Bearer ${provider.apiKey}`
   } else {
     headers['authorization'] = `Bearer ${provider.apiKey}`
+  }
+  // 自定义 User-Agent 与请求头覆盖（v0.8.18；仅路由模式经过这里）
+  if (provider.customUserAgent) headers['user-agent'] = provider.customUserAgent
+  const ho = provider.headerOverrides
+  if (ho && typeof ho === 'object' && !Array.isArray(ho)) {
+    for (const [k, v] of Object.entries(ho)) {
+      if (typeof v === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(k)) headers[k.toLowerCase()] = v
+    }
   }
   return headers
 }
@@ -286,11 +329,21 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         jsonError(res, 400, '请求体不是合法 JSON')
         return
       }
+      // 模型映射与 1M 标记剥离（v0.8.18）：聚合前缀优先，其次按档位改写
+      if (typeof anthropicBody.model === 'string' && !aggregateHit) {
+        const rewritten = mappedModelOf(anthropicBody.model, provider)
+        if (rewritten !== anthropicBody.model) anthropicBody.model = rewritten
+      }
       const oaBody = anthropicToOpenAI(anthropicBody, provider, aggregateHit?.model)
       // Responses 报文格式（v0.8.10）：wireApi='responses' 的上游打 /responses 端点
       const useResponses = provider.wireApi === 'responses'
       const upstream = provider.baseUrl.replace(/\/+$/, '') + (useResponses ? '/responses' : '/chat/completions')
-      const upstreamBody = useResponses ? anthropicToResponses(anthropicBody, aggregateHit?.model) : oaBody
+      const upstreamBody = (
+        useResponses ? anthropicToResponses(anthropicBody, aggregateHit?.model) : oaBody
+      ) as unknown as Record<string, unknown>
+      // Body 覆盖（v0.8.18）：浅合并顶层键，仅本机路由模式生效
+      const bo = provider.bodyOverrides
+      if (bo && typeof bo === 'object' && !Array.isArray(bo) && Object.keys(bo).length) Object.assign(upstreamBody, bo)
       try {
         const ac = new AbortController()
         const timer = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS)
@@ -359,18 +412,24 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         continue
       }
     }
-    // ── Anthropic 协议供应商：原样透传（聚合模式下重写 model 为剥离前缀后的名字） ──
+    // ── Anthropic 协议供应商：原样透传（聚合前缀剥离 / 模型映射 / 1M 标记剥离 / Body 覆盖在此改写） ──
     let upstreamBody: Uint8Array<ArrayBuffer> = new Uint8Array(body)
-    if (aggregateHit) {
+    if (tool === 'claude' && needsBodyRewrite(provider, aggregateHit)) {
       try {
         const ab = JSON.parse(body.toString('utf8')) as Record<string, unknown>
-        ab.model = aggregateHit.model
+        if (typeof ab.model === 'string') {
+          const rewritten = aggregateHit ? aggregateHit.model : mappedModelOf(ab.model, provider)
+          if (rewritten !== ab.model) ab.model = rewritten
+        }
+        const bo = provider.bodyOverrides
+        if (bo && typeof bo === 'object' && !Array.isArray(bo) && Object.keys(bo).length) Object.assign(ab, bo)
         upstreamBody = new Uint8Array(Buffer.from(JSON.stringify(ab), 'utf8'))
       } catch {
         /* 请求体不是 JSON：保持原样透传 */
       }
     }
-    const upstream = provider.baseUrl.replace(/\/+$/, '') + rest
+    // 完整 URL（v0.8.18）：勾选后请求原样打到 baseUrl，不再拼接 /v1/* 路径
+    const upstream = provider.fullUrl ? provider.baseUrl : provider.baseUrl.replace(/\/+$/, '') + rest
     try {
       const ac = new AbortController()
       const timer = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS)

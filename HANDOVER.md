@@ -119,16 +119,18 @@ src/
     backup.ts            # 加密备份：AES-256-GCM（scrypt 派生），导出/导入 .ccslbak，Key 不出机
     tray.ts              # 系统托盘：快切菜单 + 关窗驻留（close→hide，before-quit 才真退）
     test.ts              # 连接测试（electron net.fetch，12s 超时，区分 ok/auth/http/network）
+    models.ts            # 可用模型列表（v0.8.18）：GET /v1/models 多候选（版本段结尾先 /models 再兜底剥段 /v1/models）；keyType=api_key 走 x-api-key+版本头，否则 Bearer
     balance.ts           # 余额查询（v0.7.0）：DeepSeek/Moonshot/OpenRouter 官方接口，仅限厂商域名，endpoints 参数供自测 mock
     cleardata.ts         # 一键清空（v0.7.0）：只删 providers.json/usage-cache.json，绝不递归删 userData
     deeplink.ts          # ccsl:// 深链（v0.7.0）：解析 provider/add，永不携带 Key，解析永不抛错
     library.ts           # 供应商库业务操作（v0.8.0）：cloneProvider（副本紧跟原条目）/ reorderProviders（拖拽排序，校验 id 集合恰好匹配）；IPC 与自测共用
     importer.ts          # 从 cc-switch 迁移（旧版 JSON + SQLite，递归挖掘，尽力而为不抛错）
     i18n（shared/i18n.ts）# v0.7.0 双语字典：渲染层全部字符串 + 托盘菜单；主进程报错仍中文
+    themes（shared/themes.ts）# v0.8.18 配色主题（8 套撞色，明/暗两套令牌值）：settings.accent 白名单校验（library.ts）+ 渲染层 applyAccentVars 内联注入根元素（--accent/-hover/-ink/-soft，深色另覆盖 bg/panel/chrome）。accent 底上的文字一律 --accent-contrast，不许硬编码 #fff；dark 主题按钮是中等饱和+白字（旧的浅底+白字/#10120f 补丁已删）
     presets.ts           # 预设合并层：精选中文官方条目 + presets-data.ts（256 条生成数据，去重）
     presets-data.ts      # scripts/extract-presets.mjs 从 cc-switch（MIT）自动生成，勿手改
     updater.ts           # electron-updater（打包后启用，失败静默）
-    selftest.ts          # 端到端自测脚本（37 步）
+    selftest.ts          # 端到端自测脚本（50 步）
   preload/index.ts       # contextBridge 暴露 window.api（类型 = shared.Api）
   renderer/              # React UI：App + ProviderCard（v0.8.0 图标优先网格卡片，可拖拽）/ ProviderForm / SettingsPanel / UsageDashboard / SessionsView（v0.8.5 会话阅读器）/ McpView（v0.8.5 MCP 管理）/ Icons / ui（VendorChip/VendorLogo/Modal/Dropdown）
   shared/aggregate.ts    # 聚合别名推导与前缀解析（主进程路由与渲染层 tooltip 共用）
@@ -141,7 +143,8 @@ src/
 
 **切换语义（重要，改动前必读）**：
 - 切到供应商 = 写 `env.ANTHROPIC_BASE_URL` + 按 keyType 写 `AUTH_TOKEN` 或 `API_KEY` 并**删除另一个**；`env` 其余键与文件其余部分原样保留。
-- 「恢复官方配置」= 删除这三个键。
+- **模型映射（v0.8.18）**：切换时全量重建本工具托管的映射 env 键（`ANTHROPIC_MODEL`、`ANTHROPIC_DEFAULT_{SONNET,OPUS,FABLE,HAIKU}_MODEL(+_NAME)`、`CLAUDE_CODE_SUBAGENT_MODEL`）——先删后写，清空映射不留残留；1M 声明 = 值尾「 [1m]」后缀（Claude Code 自认，本机路由转发前剥离）。路由侧按档位关键词改写请求模型（fable 未配归 opus；子代理精确匹配豁免；**绝不改写为默认模型**——那是 env 的职责，路由再兜底会破坏聚合寻址）。
+- 「恢复官方配置」= 删除这三个键 + 全部映射 env 键。
 - **每次写入前自动备份**，文件名 `settings.json.bak-时间戳`，同秒冲突会追加 `-1` 后缀（这里踩过坑，见 §8），保留最近 10 份。
 - Codex：`model_provider = "ccsl"` + `[model_providers.ccsl]`（`requires_openai_auth = true`，Key 进 auth.json）。**v0.6.0 起是行级手术式编辑**：只替换/追加我们拥有的键（顶层 `model_provider`/`model` 与 ccsl 段），注释、键顺序、`[profile.*]` 等原样保留；写盘前用完整 TOML 解析校验，解析失败即中止（绝不写坏用户文件）。
 
@@ -173,7 +176,7 @@ npm run selftest     # 自测（见下）
 npm run dist         # 打包 NSIS 安装包（见下）
 ```
 
-**自测**（改主进程逻辑后必跑，17 步全过才算过）：
+**自测**（改主进程逻辑后必跑，50 步全过才算过）：
 ```bash
 rm -rf tmp-selftest/home tmp-selftest/data   # 重置夹具（.claude/.codex 夹具在 git 里？否——见下注）
 # 夹具重建：tmp-selftest/home/.claude/settings.json 等三个文件内容见仓库历史或下方 §7
@@ -245,11 +248,16 @@ npx electron-builder --win --publish never
   }
 }
 ```
-`tmp-selftest/home/.codex/config.toml`（注释与 `[profile.fast]` 是断言对象，别删）：
+`tmp-selftest/home/.codex/config.toml`（注释、`[profile.fast]` 与多行字符串都是断言对象，别删）：
 ```toml
 # 用户手工维护的注释：切换后必须原样保留
 model = "gpt-5"
 approval_policy = "on-request"
+notes = """
+用户多行备注
+model = fake
+[model_providers.evil]
+"""
 
 [profile.fast]
 # profile 内注释
@@ -285,6 +293,7 @@ model_reasoning_effort = "low"
 20. **克隆功能与备份导入去重的相互作用**：备份导入按 `tool|baseUrl|apiKey` 去重，而克隆体与原条目三元组完全相同——删掉原条目再导入备份会被它的克隆挡住（跳过而不是找回）。这是设计行为，不是 bug；自测的备份导入步骤因此选一条**没有克隆体**的供应商做受删对象（2026-10-31 自测抓到）。
 21. **CDP 直调 `window.api.settingsUpdate` 不会刷新 React 状态**：主题等由 App 从 store 派生的界面必须 reload 后才生效（真实 UI 走 select→onChanged→refresh 所以没事）。CDP 验证这类设置一律「settingsUpdate + Page.reload + 断言」。
 22. **自测夹具重置顺序**：先 `rm -rf home data` 再按 §7 重建全部三个文件——先建后删会静默丢夹具，Codex 步骤会以「空 config.toml」起步并报「顶层注释丢失」（2026-10-31 实测）。
+23. **未定义的 CSS token 会静默变直角/无边框**（v0.8.18 三次连踩：`--line`、`--r-btn`、`--r-m`/`--r-card` 都被使用但从未在 tokens.css 定义，`var()` 无回退时声明失效回退初值——用户看到的就是"方框不合群"）。改样式后跑一遍审计：`grep -oE "var\(--[a-z0-9-]+" src/renderer/src/app.css | sed 's/var(//' | sort -u` 与 tokens.css 定义比对。
 
 ## 9. 路线图（2026-10-31 更新）
 

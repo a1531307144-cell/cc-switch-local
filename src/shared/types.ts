@@ -2,8 +2,30 @@ export type ToolId = 'claude' | 'codex'
 export type KeyType = 'auth_token' | 'api_key'
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type Lang = 'zh' | 'en'
-/** 接口协议（claude 工具用）：anthropic=标准 Claude 端点；openai=OpenAI 兼容（经本机路由协议转换） */
+/** 接口协议（claude 工具用）：anthropic=标准 Claude 端点；openai=OpenAI 兼容（经本机路由转换） */
 export type Protocol = 'anthropic' | 'openai'
+
+/** 模型映射档位（v0.8.18，对标原版 cc-switch）：写入 settings.json env 的角色键 */
+export type ModelRole = 'sonnet' | 'opus' | 'fable' | 'haiku' | 'subagent'
+
+/** 模型映射单条（v0.8.18）：某档位映射到的实际模型 */
+export interface ModelMapEntry {
+  /** 实际请求模型（空串视为未配置） */
+  model: string
+  /** /model 菜单显示名（写入 ANTHROPIC_DEFAULT_*_MODEL_NAME；subagent 档无菜单项） */
+  display?: string
+  /** 声明支持 1M 上下文：env 值带「 [1m]」后缀，本机路由转发前剥离 */
+  ctx1m?: boolean
+}
+
+/** 供应商级模型映射（v0.8.18）：env 写入 + 本机路由档位改写共用 */
+export interface ProviderModelMapping {
+  sonnet?: ModelMapEntry
+  opus?: ModelMapEntry
+  fable?: ModelMapEntry
+  haiku?: ModelMapEntry
+  subagent?: ModelMapEntry
+}
 
 export interface Provider {
   id: string
@@ -21,6 +43,18 @@ export interface Provider {
   model?: string
   /** OpenAI 兼容端点的报文格式：codex 写入 config.toml 的 wire_api；claude（protocol=openai）选择上游走 Chat Completions 或 Responses API（v0.8.10 起） */
   wireApi?: 'responses' | 'chat'
+  /** 模型映射（v0.8.18，仅 claude）：写入 settings.json env（ANTHROPIC_DEFAULT_*_MODEL 等），本机路由同步做档位改写 */
+  modelMapping?: ProviderModelMapping
+  /** 默认兜底模型声明 1M（v0.8.18）：model 字段的 env 值（ANTHROPIC_MODEL）带「 [1m]」后缀 */
+  model1m?: boolean
+  /** 完整 URL（v0.8.18）：本机路由转发时原样使用 baseUrl，不再拼接 /v1/* 路径 */
+  fullUrl?: boolean
+  /** 自定义 User-Agent（v0.8.18）：仅本机路由模式生效 */
+  customUserAgent?: string
+  /** 上游请求头覆盖（v0.8.18）：仅本机路由模式生效，键为合法头名 */
+  headerOverrides?: Record<string, string>
+  /** 上游请求体覆盖（v0.8.18）：仅本机路由模式生效，浅合并进 JSON 请求体顶层 */
+  bodyOverrides?: Record<string, unknown>
   notes?: string
   /** 图标 slug（v0.8.14 起）：从预设带入随供应商持久化，卡片渲染优先于域名识别 */
   icon?: string
@@ -42,6 +76,13 @@ export interface ProviderInput {
   alias?: string
   model?: string
   wireApi?: 'responses' | 'chat'
+  /** 模型映射（v0.8.18，同 Provider.modelMapping） */
+  modelMapping?: ProviderModelMapping
+  model1m?: boolean
+  fullUrl?: boolean
+  customUserAgent?: string
+  headerOverrides?: Record<string, string>
+  bodyOverrides?: Record<string, unknown>
   notes?: string
   /** 图标 slug（v0.8.14）：从预设带入 */
   icon?: string
@@ -57,6 +98,8 @@ export interface AppSettings {
   sidebarCollapsed?: boolean
   /** 供应商列表视图样式（v0.8.6 起；缺省 grid 方块，list 为横向长条） */
   providerView?: 'grid' | 'list'
+  /** 配色主题（v0.8.18；shared/themes.ts 的 id，缺省 sage 鼠尾草；独立于明暗模式） */
+  accent?: string
   /** 本机路由模式（每工具独立开关；port 缺省 15731；缺省 false） */
   router?: {
     claude: boolean
@@ -107,6 +150,13 @@ export interface TestResult {
   kind: 'ok' | 'auth' | 'http' | 'network'
   status?: number
   latencyMs?: number
+  message?: string
+}
+
+/** 可用模型列表拉取结果（v0.8.18）：OpenAI 兼容 GET /v1/models（anthropic 端点带 x-api-key/版本头） */
+export interface ModelsResult {
+  ok: boolean
+  models?: string[]
   message?: string
 }
 
@@ -327,6 +377,8 @@ export interface Api {
   toolBackups(tool: ToolId): Promise<BackupInfo[]>
   toolRestoreBackup(tool: ToolId, file: string): Promise<SwitchResult>
   providerTest(input: TestInput): Promise<TestResult>
+  /** 拉取上游可用模型列表（v0.8.18）：GET /v1/models，多候选地址依次尝试 */
+  modelsFetch(input: { baseUrl: string; apiKey: string; keyType?: KeyType; protocol?: 'anthropic' | 'openai' }): Promise<ModelsResult>
   ccswitchImport(): Promise<ImportReport>
   presetsGet(): Promise<Preset[]>
   backupExport(passphrase: string): Promise<{ savedTo?: string; canceled?: boolean }>

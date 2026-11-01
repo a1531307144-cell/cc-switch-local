@@ -3,7 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import crypto from 'node:crypto'
-import type { AppSettings, Provider, ProviderGroup, StoreShape, StoredPrompt, ToolId } from '../shared/types'
+import type { AppSettings, ModelMapEntry, Provider, ProviderGroup, StoreShape, StoredPrompt, ToolId } from '../shared/types'
 
 const TOOL_IDS: ToolId[] = ['claude', 'codex']
 const KEY_TYPES = ['auth_token', 'api_key']
@@ -49,6 +49,46 @@ export function sanitizeProviderRecord(raw: unknown): Provider | null {
       }
     }
   }
+  // 模型映射与高级请求设置（v0.8.18）：形状非法丢弃该字段，不影响记录本身
+  let modelMapping: Provider['modelMapping']
+  if (p.modelMapping !== undefined && p.modelMapping !== null && typeof p.modelMapping === 'object' && !Array.isArray(p.modelMapping)) {
+    const mm = p.modelMapping as Record<string, unknown>
+    const out: NonNullable<Provider['modelMapping']> = {}
+    for (const role of ['sonnet', 'opus', 'fable', 'haiku', 'subagent'] as const) {
+      const e = mm[role] as Record<string, unknown> | undefined
+      const model = typeof e?.model === 'string' ? e.model.trim() : ''
+      if (!model || model.length > 200) continue
+      const entry: ModelMapEntry = { model }
+      const display = typeof e?.display === 'string' ? e.display.trim() : ''
+      if (role !== 'subagent' && display && display.length <= 100) entry.display = display
+      if (e?.ctx1m === true) entry.ctx1m = true
+      out[role] = entry
+    }
+    if (Object.keys(out).length) modelMapping = out
+  }
+  const model1m = p.model1m === true ? true : undefined
+  const fullUrl = p.fullUrl === true ? true : undefined
+  const customUserAgent =
+    typeof p.customUserAgent === 'string' && p.customUserAgent.trim() && p.customUserAgent.length <= 300
+      ? p.customUserAgent.trim()
+      : undefined
+  let headerOverrides: Record<string, string> | undefined
+  if (p.headerOverrides && typeof p.headerOverrides === 'object' && !Array.isArray(p.headerOverrides)) {
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(p.headerOverrides as Record<string, unknown>)) {
+      if (/^[A-Za-z0-9-]{1,64}$/.test(k) && typeof v === 'string' && v.trim() && v.length <= 1000) out[k] = v.trim()
+    }
+    if (Object.keys(out).length) headerOverrides = out
+  }
+  let bodyOverrides: Record<string, unknown> | undefined
+  if (p.bodyOverrides && typeof p.bodyOverrides === 'object' && !Array.isArray(p.bodyOverrides)) {
+    const entries = Object.entries(p.bodyOverrides as Record<string, unknown>).filter(
+      ([k]) => typeof k === 'string' && k.trim() && k.length <= 100
+    )
+    if (entries.length && JSON.stringify(Object.fromEntries(entries)).length <= 8192) {
+      bodyOverrides = Object.fromEntries(entries)
+    }
+  }
   const now = Date.now()
   return {
     id: typeof p.id === 'string' && p.id && p.id.length <= 64 ? p.id : crypto.randomUUID(),
@@ -63,6 +103,12 @@ export function sanitizeProviderRecord(raw: unknown): Provider | null {
     wireApi: p.wireApi === 'chat' ? 'chat' : p.wireApi === 'responses' ? 'responses' : undefined,
     notes: typeof p.notes === 'string' && p.notes ? p.notes : undefined,
     ...(typeof p.icon === 'string' && p.icon ? { icon: p.icon } : {}),
+    ...(modelMapping ? { modelMapping } : {}),
+    ...(model1m ? { model1m } : {}),
+    ...(fullUrl ? { fullUrl } : {}),
+    ...(customUserAgent ? { customUserAgent } : {}),
+    ...(headerOverrides ? { headerOverrides } : {}),
+    ...(bodyOverrides ? { bodyOverrides } : {}),
     ...(lastBalance ? { lastBalance } : {}),
     createdAt: typeof p.createdAt === 'number' && Number.isFinite(p.createdAt) ? p.createdAt : now,
     updatedAt: typeof p.updatedAt === 'number' && Number.isFinite(p.updatedAt) ? p.updatedAt : now

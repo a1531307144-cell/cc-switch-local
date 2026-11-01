@@ -14,6 +14,8 @@ const api: Api = {
   toolBackups: (tool: ToolId) => ipcRenderer.invoke('tool:backups', tool),
   toolRestoreBackup: (tool: ToolId, file: string) => ipcRenderer.invoke('tool:restoreBackup', tool, file),
   providerTest: (input: TestInput) => ipcRenderer.invoke('provider:test', input),
+  modelsFetch: (input: { baseUrl: string; apiKey: string; keyType?: 'auth_token' | 'api_key'; protocol?: 'anthropic' | 'openai' }) =>
+    ipcRenderer.invoke('models:fetch', input),
   ccswitchImport: () => ipcRenderer.invoke('ccswitch:import'),
   presetsGet: () => ipcRenderer.invoke('presets:get'),
   backupExport: (passphrase: string) => ipcRenderer.invoke('backup:export', passphrase),

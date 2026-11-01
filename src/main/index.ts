@@ -5,6 +5,7 @@ import { dataDir, loadStore, masterState, newId, saveStore, setMasterPassword, c
 import * as claude from './claude'
 import * as codex from './codex'
 import { testProvider } from './test'
+import { fetchModels } from './models'
 import { importFromCcSwitch } from './importer'
 import { backupExport, backupImport } from './backup'
 import { usageStats } from './usage'
@@ -33,7 +34,7 @@ import { switchProviderForTool } from './switcher'
 import { createTray, refreshTray } from './tray'
 import { runSelfTest } from './selftest'
 import { RELEASES_URL } from '../shared/constants'
-import type { AppSettings, Provider, ProviderInput, TestInput, ToolId } from '../shared/types'
+import type { AppSettings, KeyType, Provider, ProviderInput, TestInput, ToolId } from '../shared/types'
 
 const SELFTEST = process.argv.includes('--selftest')
 
@@ -168,6 +169,8 @@ const TOOL_IDS: ToolId[] = ['claude', 'codex']
 const KEY_TYPES: string[] = ['auth_token', 'api_key']
 const WIRE_APIS: string[] = ['responses', 'chat']
 const PROTOCOLS: string[] = ['anthropic', 'openai']
+const MODEL_ROLES: string[] = ['sonnet', 'opus', 'fable', 'haiku', 'subagent']
+const HEADER_NAME_RE = /^[A-Za-z0-9-]{1,64}$/
 const isStr = (v: unknown): v is string => typeof v === 'string'
 
 /** tool 参数严格白名单：非 claude/codex 一律拒绝，绝不静默归到另一工具（2026-10-31 审计 P2） */
@@ -198,6 +201,90 @@ function validateProviderInput(input: ProviderInput): void {
     throw new Error('非法的图标标识')
   }
   if (input.id !== undefined && (!isStr(input.id) || input.id.length > 64)) throw new Error('非法的 id')
+  // ── 模型映射与高级请求设置（v0.8.18） ──
+  if (input.model1m !== undefined && typeof input.model1m !== 'boolean') throw new Error('非法的 1M 标记')
+  if (input.fullUrl !== undefined && typeof input.fullUrl !== 'boolean') throw new Error('非法的完整 URL 标记')
+  if (input.customUserAgent !== undefined && (!isStr(input.customUserAgent) || input.customUserAgent.length > 300)) {
+    throw new Error('自定义 User-Agent 过长（≤ 300）')
+  }
+  if (input.modelMapping !== undefined) {
+    const mm = input.modelMapping
+    if (!mm || typeof mm !== 'object' || Array.isArray(mm)) throw new Error('非法的模型映射')
+    for (const [role, entry] of Object.entries(mm as Record<string, unknown>)) {
+      if (!MODEL_ROLES.includes(role)) throw new Error(`未知的模型映射档位：${role}`)
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new Error('非法的模型映射条目')
+      const e = entry as Record<string, unknown>
+      if (!isStr(e.model) || e.model.length > 200) throw new Error('模型映射的模型名非法')
+      if (e.display !== undefined && (!isStr(e.display) || e.display.length > 100)) throw new Error('模型映射显示名非法')
+      if (e.ctx1m !== undefined && typeof e.ctx1m !== 'boolean') throw new Error('非法的 1M 标记')
+    }
+  }
+  if (input.headerOverrides !== undefined) {
+    const ho = input.headerOverrides
+    if (!ho || typeof ho !== 'object' || Array.isArray(ho)) throw new Error('非法的请求头覆盖')
+    const entries = Object.entries(ho)
+    if (entries.length > 20) throw new Error('请求头覆盖最多 20 条')
+    for (const [k, v] of entries) {
+      if (!HEADER_NAME_RE.test(k) || !isStr(v) || v.length > 1000) throw new Error('请求头覆盖的键值非法')
+    }
+  }
+  if (input.bodyOverrides !== undefined) {
+    const bo = input.bodyOverrides
+    if (!bo || typeof bo !== 'object' || Array.isArray(bo)) throw new Error('非法的请求体覆盖')
+    if (JSON.stringify(bo).length > 8192) throw new Error('请求体覆盖过大（≤ 8KB）')
+  }
+}
+
+/** 空条目剔除后的模型映射；全空返回 undefined */
+function normalizeMapping(mm: ProviderInput['modelMapping']): ProviderInput['modelMapping'] {
+  if (!mm) return undefined
+  type Mapping = NonNullable<ProviderInput['modelMapping']>
+  type Entry = NonNullable<Mapping['sonnet']>
+  const out: Mapping = {}
+  const roles: (keyof Mapping)[] = ['sonnet', 'opus', 'fable', 'haiku', 'subagent']
+  for (const role of roles) {
+    const e = mm[role]
+    const model = (e?.model ?? '').trim()
+    if (!model) continue
+    const entry: Entry = { model }
+    const display = (e?.display ?? '').trim()
+    if (display) entry.display = display
+    if (e?.ctx1m) entry.ctx1m = true
+    out[role] = entry
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+/** 请求头覆盖：剔掉空值与非法头名；全空返回 undefined */
+function normalizeOverrides(ho: unknown): Record<string, string> | undefined {
+  if (!ho || typeof ho !== 'object' || Array.isArray(ho)) return undefined
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(ho as Record<string, unknown>)) {
+    const key = k.trim()
+    if (!key || !HEADER_NAME_RE.test(key) || !isStr(v) || !v.trim()) continue
+    out[key] = v.trim()
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+/** 请求体覆盖：浅层 JSON 对象原样保留（值已在 validateProviderInput 限制过大小）；空对象返回 undefined */
+function normalizeBodyOverrides(bo: unknown): Record<string, unknown> | undefined {
+  if (!bo || typeof bo !== 'object' || Array.isArray(bo)) return undefined
+  const entries = Object.entries(bo as Record<string, unknown>).filter(([k]) => isStr(k) && k.trim() && k.length <= 100)
+  return entries.length ? Object.fromEntries(entries) : undefined
+}
+
+/** claude 供应商的高级设置字段（codex 不含这些概念，落库时统一剔除） */
+function advancedClaudeFields(input: ProviderInput): Partial<ProviderInput> {
+  if (input.tool !== 'claude') return {}
+  return {
+    modelMapping: normalizeMapping(input.modelMapping),
+    model1m: input.model1m === true ? true : undefined,
+    fullUrl: input.fullUrl === true ? true : undefined,
+    customUserAgent: input.customUserAgent?.trim() || undefined,
+    headerOverrides: normalizeOverrides(input.headerOverrides),
+    bodyOverrides: normalizeBodyOverrides(input.bodyOverrides)
+  }
 }
 
 function registerIpc(): void {
@@ -257,6 +344,7 @@ function registerIpc(): void {
         wireApi: input.wireApi || undefined,
         notes: input.notes || undefined,
         icon: input.icon ?? existing.icon,
+        ...advancedClaudeFields(input),
         updatedAt: now
       }
       store.providers[idx] = updated
@@ -277,6 +365,7 @@ function registerIpc(): void {
       wireApi: input.wireApi || undefined,
       notes: input.notes || undefined,
       icon: input.icon,
+      ...advancedClaudeFields(input),
       createdAt: now,
       updatedAt: now
     }
@@ -361,6 +450,14 @@ function registerIpc(): void {
   ipcMain.handle('provider:test', (_e, input: TestInput) => {
     validateTestInput(input)
     return testProvider(input)
+  })
+
+  // 拉取上游可用模型列表（v0.8.18）：入参在主进程重新校验，Key 不落日志
+  ipcMain.handle('models:fetch', (_e, input: { baseUrl?: unknown; apiKey?: unknown; keyType?: unknown; protocol?: unknown }) => {
+    if (!input || !isStr(input.baseUrl) || !isStr(input.apiKey)) throw new Error('非法的请求参数')
+    const keyType: KeyType = input.keyType === 'api_key' ? 'api_key' : 'auth_token'
+    const protocol = input.protocol === 'openai' ? ('openai' as const) : input.protocol === 'anthropic' ? ('anthropic' as const) : undefined
+    return fetchModels({ baseUrl: input.baseUrl, apiKey: input.apiKey, keyType, protocol })
   })
 
   ipcMain.handle('ccswitch:import', () => importFromCcSwitch())

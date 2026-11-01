@@ -1,5 +1,6 @@
 import { loadStore, newId, saveStore } from './store'
 import type { AppSettings, Provider, ToolId } from '../shared/types'
+import { ACCENT_IDS } from '../shared/themes'
 
 /**
  * 供应商库的业务操作（克隆/排序）与设置校验。IPC 层与自测共用：
@@ -12,7 +13,7 @@ const THEMES = ['system', 'light', 'dark']
 export function validateSettingsPatch(patch: Partial<AppSettings>): void {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('非法的设置内容')
   for (const k of Object.keys(patch)) {
-    if (!['autoUpdate', 'autoStart', 'theme', 'language', 'sidebarCollapsed', 'providerView', 'router'].includes(k)) {
+    if (!['autoUpdate', 'autoStart', 'theme', 'language', 'sidebarCollapsed', 'providerView', 'router', 'accent'].includes(k)) {
       throw new Error(`非法的设置项：${k}`)
     }
   }
@@ -23,6 +24,9 @@ export function validateSettingsPatch(patch: Partial<AppSettings>): void {
     throw new Error('非法的列表视图样式')
   }
   if (patch.theme !== undefined && !THEMES.includes(patch.theme)) throw new Error('非法的主题')
+  if (patch.accent !== undefined && (typeof patch.accent !== 'string' || !ACCENT_IDS.includes(patch.accent))) {
+    throw new Error('非法的配色主题')
+  }
   if (patch.language !== undefined && patch.language !== 'zh' && patch.language !== 'en') throw new Error('非法的语言')
   if (patch.router !== undefined) {
     const r = patch.router as { claude?: unknown; codex?: unknown; port?: unknown; aggregate?: unknown }

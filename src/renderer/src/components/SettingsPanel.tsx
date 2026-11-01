@@ -2,12 +2,56 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentVersionInfo, AppSettings, BackupInfo, RouterStatus, StoreShape, ToolId } from '../../../shared/types'
 import { t, type Lang } from '../../../shared/i18n'
 import { compareVersions } from '../../../shared/version'
+import { ACCENT_THEMES, mixHex } from '../../../shared/themes'
 import { Dropdown, Modal } from './ui'
 
 function fmtDate(ms: number): string {
   const d = new Date(ms)
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** 配色主题选择器（v0.8.18）：accent 独立于明暗模式，色板按当前模式预览 */
+function AccentPicker({
+  lang,
+  s,
+  onUpdate
+}: {
+  lang: Lang
+  s: AppSettings
+  onUpdate: (patch: Partial<AppSettings>) => void | Promise<void>
+}) {
+  const dark =
+    s.theme === 'dark' || ((s.theme === undefined || s.theme === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  const current = s.accent ?? 'sage'
+  return (
+    <div className="accent-block">
+      <span className="accent-label">{t(lang, 'set.accent')}</span>
+      <div className="accent-grid">
+        {ACCENT_THEMES.map((th) => {
+          const vars = dark ? th.dark : th.light
+          const base = dark ? vars.panel ?? '#16181d' : '#ffffff'
+          return (
+            <button
+              key={th.id}
+              type="button"
+              className={`accent-card${current === th.id ? ' active' : ''}`}
+              onClick={() => void onUpdate({ accent: th.id })}
+              aria-pressed={current === th.id}
+            >
+              <span className="accent-name">{lang === 'zh' ? th.name.zh : th.name.en}</span>
+              <span className="accent-swatches">
+                <i style={{ background: vars.accent }} />
+                <i style={{ background: mixHex(vars.accent, base, 0.55) }} />
+                <i style={{ background: mixHex(vars.accent, base, 0.22) }} />
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <small className="muted">{t(lang, 'set.accentHint')}</small>
+    </div>
+  )
 }
 
 /** 加密备份的口令输入对话框（导出/导入共用） */
@@ -290,6 +334,7 @@ export default function SettingsPanel({
             onChange={(v) => void updateSetting({ language: v as AppSettings['language'] })}
           />
         </div>
+        <AccentPicker lang={lang} s={s} onUpdate={updateSetting} />
       </section>
 
       <section className="card">

@@ -4,10 +4,81 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import { atomicWrite } from './store'
 import { routerPort } from './router'
-import type { BackupInfo, McpServerSpec, Provider, SwitchResult, ToolStatus } from '../shared/types'
+import type { BackupInfo, McpServerSpec, ModelMapEntry, ModelRole, Provider, SwitchResult, ToolStatus } from '../shared/types'
 
 const MAX_BACKUPS = 10
 const BACKUP_PREFIX = 'settings.json.bak-'
+
+/**
+ * 本工具托管的模型映射 env 键（v0.8.18，与原版 cc-switch 同名）：
+ * 切换时先全部移除再按当前供应商写入，保证清空映射后不留残留。
+ */
+const MODEL_ENV_KEYS: string[] = [
+  'ANTHROPIC_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL_NAME',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL_NAME',
+  'ANTHROPIC_DEFAULT_FABLE_MODEL',
+  'ANTHROPIC_DEFAULT_FABLE_MODEL_NAME',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME',
+  'CLAUDE_CODE_SUBAGENT_MODEL'
+]
+
+/** Claude Code 用「 [1m]」后缀声明 1M 上下文；大小写不敏感，转发前由本机路由剥离 */
+const ONE_M_SUFFIX_RE = /\s*\[1m\]\s*$/i
+
+/** 拆开 env 值里的 1M 标记：{ model: 不带标记的模型名, ctx1m: 是否声明了 1M } */
+function splitOneM(value: string): { model: string; ctx1m: boolean } {
+  const ctx1m = ONE_M_SUFFIX_RE.test(value)
+  return { model: value.replace(ONE_M_SUFFIX_RE, '').trim(), ctx1m }
+}
+
+/** 把供应商的模型映射写进 settings env（调用方已先清空 MODEL_ENV_KEYS；空条目跳过） */
+function applyModelEnv(env: Record<string, unknown>, provider: Provider): void {
+  const put = (entry: ModelMapEntry | undefined, key: string, nameKey?: string): void => {
+    const model = (entry?.model ?? '').trim()
+    if (!model) return
+    env[key] = entry?.ctx1m ? `${model} [1m]` : model
+    const display = (entry?.display ?? '').trim()
+    if (nameKey && display) env[nameKey] = display
+  }
+  // 默认兜底模型沿用 model 字段（ANTHROPIC_MODEL）
+  put({ model: provider.model ?? '', ctx1m: provider.model1m }, 'ANTHROPIC_MODEL')
+  const mm = provider.modelMapping
+  put(mm?.sonnet, 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL_NAME')
+  put(mm?.opus, 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL_NAME')
+  put(mm?.fable, 'ANTHROPIC_DEFAULT_FABLE_MODEL', 'ANTHROPIC_DEFAULT_FABLE_MODEL_NAME')
+  put(mm?.haiku, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME')
+  put(mm?.subagent, 'CLAUDE_CODE_SUBAGENT_MODEL')
+}
+
+/** 从 settings env 回读模型映射（导入当前配置时用），无任何映射时返回 undefined */
+export function modelEnvToMapping(env: Record<string, unknown>): { model1m?: boolean; modelMapping?: Provider['modelMapping'] } {
+  const roles: [ModelRole, string][] = [
+    ['sonnet', 'ANTHROPIC_DEFAULT_SONNET_MODEL'],
+    ['opus', 'ANTHROPIC_DEFAULT_OPUS_MODEL'],
+    ['fable', 'ANTHROPIC_DEFAULT_FABLE_MODEL'],
+    ['haiku', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'],
+    ['subagent', 'CLAUDE_CODE_SUBAGENT_MODEL']
+  ]
+  const mapping: Provider['modelMapping'] = {}
+  let any = false
+  for (const [role, key] of roles) {
+    const v = env[key]
+    if (typeof v !== 'string' || !v.trim()) continue
+    const { model, ctx1m } = splitOneM(v)
+    if (!model) continue
+    const display = env[`${key}_NAME`]
+    const entry: ModelMapEntry = { model, ...(ctx1m ? { ctx1m: true } : {}) }
+    if (role !== 'subagent' && typeof display === 'string' && display.trim()) entry.display = display.trim()
+    mapping[role] = entry
+    any = true
+  }
+  if (!any) return {}
+  return { modelMapping: mapping }
+}
 
 /** 自测时用 CCS_HOME_OVERRIDE 隔离，绝不碰真实用户目录 */
 export function homeDir(): string {
@@ -100,7 +171,10 @@ export async function switchClaude(provider: Provider | null, viaRouter = false)
   const data = await readSettings()
   const backup = await backupSettings()
   const env = { ...((data.env as Record<string, unknown>) ?? {}) }
+  // 模型映射 env 键每次全量重建：切空/切官方都不留残留
+  for (const k of MODEL_ENV_KEYS) delete env[k]
   if (provider) {
+    applyModelEnv(env, provider)
     if (viaRouter) {
       env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${routerPort()}/claude`
       env.ANTHROPIC_AUTH_TOKEN = 'ccsl-local-router'
@@ -133,6 +207,9 @@ export async function importCurrentClaude(): Promise<Provider | null> {
   if (typeof baseUrl !== 'string' && typeof authToken !== 'string' && typeof apiKey !== 'string') {
     return null
   }
+  // 模型映射 env 回读（v0.8.18）：编辑当前配置时能看到已写入的映射
+  const { model: modelEnv, ctx1m } = splitOneM(typeof env.ANTHROPIC_MODEL === 'string' ? env.ANTHROPIC_MODEL : '')
+  const { modelMapping } = modelEnvToMapping(env)
   return {
     id: '',
     tool: 'claude',
@@ -140,6 +217,8 @@ export async function importCurrentClaude(): Promise<Provider | null> {
     baseUrl: typeof baseUrl === 'string' ? baseUrl : '',
     apiKey: typeof authToken === 'string' ? authToken : typeof apiKey === 'string' ? apiKey : '',
     keyType: typeof apiKey === 'string' && typeof authToken !== 'string' ? 'api_key' : 'auth_token',
+    ...(modelEnv ? { model: modelEnv, ...(ctx1m ? { model1m: true } : {}) } : {}),
+    ...(modelMapping ? { modelMapping } : {}),
     createdAt: 0,
     updatedAt: 0
   }

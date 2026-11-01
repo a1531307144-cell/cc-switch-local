@@ -102,6 +102,48 @@ export const STRINGS = {
     en: 'Chat Completions for regular OpenAI-compatible endpoints; Responses API for upstreams that only expose /responses (e.g. newer OpenAI models)'
   },
 
+  // ── 模型映射与高级请求设置（v0.8.18，对标原版 cc-switch） ──
+  'form.fullUrl': { zh: '完整 URL', en: 'Full URL' },
+  'form.fullUrlHint': {
+    zh: '勾选后本机路由把请求原样打到该地址，不再拼接 /v1/* 路径（仅路由模式生效）',
+    en: 'The local router forwards to this address as-is without appending /v1/* paths (router mode only)'
+  },
+  'form.modelMapping': { zh: '模型映射', en: 'Model mapping' },
+  'form.mappingHint': {
+    zh: '把 Claude Code 各档模型角色映射到上游实际模型，写入 settings.json 的 ANTHROPIC_DEFAULT_*_MODEL，重启会话后生效',
+    en: 'Maps Claude Code model roles to actual upstream models via ANTHROPIC_DEFAULT_*_MODEL in settings.json; restart sessions to apply'
+  },
+  'form.roleLabel': { zh: '模型角色', en: 'Role' },
+  'form.display': { zh: '显示名称', en: 'Display name' },
+  'form.displayPh': { zh: '/model 菜单里的名字，留空用实际模型', en: 'Name in /model menu; blank = actual model' },
+  'form.actual': { zh: '实际请求模型', en: 'Actual model' },
+  'form.actualPh': { zh: '如 deepseek-chat', en: 'e.g. deepseek-chat' },
+  'form.subagentNoMenu': { zh: '不显示在 /model 菜单', en: 'Not shown in /model menu' },
+  'form.mappingOneKey': { zh: '一键设置', en: 'Fill roles' },
+  'form.mappingClear': { zh: '清空', en: 'Clear' },
+  'form.oneKeyNeed': { zh: '请先填写下方默认兜底模型', en: 'Fill the default fallback model below first' },
+  'form.fetchModels': { zh: '获取模型列表', en: 'Fetch models' },
+  'form.fetching': { zh: '获取中…', en: 'Fetching…' },
+  'form.modelsOk': { zh: '已获取 {n} 个模型：在输入框右侧 ▾ 里选择', en: '{n} models fetched: pick from ▾ next to each field' },
+  'form.modelsFail': { zh: '获取失败：{msg}', en: 'Fetch failed: {msg}' },
+  'form.modelsNeed': { zh: '请先填写请求地址和 API Key', en: 'Enter the endpoint and API key first' },
+  'form.defaultModel': { zh: '默认兜底模型', en: 'Default fallback model' },
+  'form.defaultModelHint': {
+    zh: '写入 ANTHROPIC_MODEL（也作为测试请求的模型名）；留空由 Claude Code 自行决定',
+    en: 'Written to ANTHROPIC_MODEL (also used for test requests); leave empty to let Claude Code decide'
+  },
+  'form.userAgent': { zh: '自定义 User-Agent', en: 'Custom User-Agent' },
+  'form.routerOnly': { zh: '仅本机路由模式生效', en: 'local-router mode only' },
+  'form.uaPreset': { zh: '预设', en: 'Presets' },
+  'form.overridesHint': {
+    zh: '浅合并进本机路由转发的请求（仅路由模式生效）：Header 为「头名: 值」的 JSON 对象，Body 覆盖请求体顶层字段',
+    en: 'Shallow-merged into router-forwarded requests (router mode only): Header as a "name: value" JSON object, Body overrides top-level JSON fields'
+  },
+  'form.headerOverride': { zh: 'Header 覆盖（JSON）', en: 'Header overrides (JSON)' },
+  'form.bodyOverride': { zh: 'Body 覆盖（JSON）', en: 'Body overrides (JSON)' },
+  'form.err.headerJson': { zh: 'Header 覆盖必须是「头名: 字符串值」的 JSON 对象', en: 'Header overrides must be a JSON object of "name": "value" pairs' },
+  'form.err.bodyJson': { zh: 'Body 覆盖必须是合法的 JSON 对象', en: 'Body overrides must be a valid JSON object' },
+
   // ── 添加供应商整页（v0.8.13） ──
   'add.title': { zh: '添加供应商', en: 'Add provider' },
   'add.back': { zh: '返回', en: 'Back' },
@@ -402,6 +444,11 @@ export const STRINGS = {
   'set.theme.system': { zh: '跟随系统', en: 'System' },
   'set.theme.light': { zh: '浅色', en: 'Light' },
   'set.theme.dark': { zh: '深色', en: 'Dark' },
+  'set.accent': { zh: '配色', en: 'Color theme' },
+  'set.accentHint': {
+    zh: '撞色强调色，浅色/深色模式各自调校；深色主题会连带撞色底色',
+    en: 'Bold accent colors tuned per mode; dark variants also tint the canvas'
+  },
   'set.language': { zh: '语言', en: 'Language' },
   'set.general': { zh: '通用', en: 'General' },
   'set.autoUpdate': { zh: '启动时自动检查更新（仅提示，不静默安装）', en: 'Check updates at launch (prompt only, never silent-install)' },
