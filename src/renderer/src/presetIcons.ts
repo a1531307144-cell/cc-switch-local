@@ -51,3 +51,55 @@ export function presetIconUrl(slug: string | undefined): string | undefined {
   if (alias) return fileUrl(alias)
   return undefined
 }
+
+/** 自带实心底的图标（上游 metadata shape='tile'）：满铺容器而非内边距居中 */
+const TILE_ICONS = new Set([
+  '88api',
+  'aicoming',
+  'aihubmix',
+  'alltokens',
+  'apikeyfun',
+  'apinebula',
+  'astron',
+  'buytoken',
+  'ccsub',
+  'cherryin',
+  'claudecn',
+  'commandcode',
+  'eflowcode',
+  'fluxa',
+  'grooroute',
+  'haoai',
+  'ikuncode',
+  'modelflare',
+  'omp',
+  'openmodel',
+  'pateway',
+  'pipellm',
+  'qiniu',
+  'relaxcode',
+  'runapi',
+  'runtoken',
+  'shengsuanyun',
+  'soruxgpt',
+  'sssaicode',
+  'sub2api',
+  'subrouter',
+  'sudocode',
+  'teamorouter',
+  'tokenfactory',
+  'tokenflux',
+  'tuzi',
+  'ucloud',
+  'unity2',
+  'vapi',
+  'xiaomimimo',
+  'zenmux',
+  'zetaapi'
+])
+
+/** 该 slug 是否自带实心底 */
+export function isTileIcon(slug: string | undefined): boolean {
+  if (!slug) return false
+  return TILE_ICONS.has(slug.toLowerCase())
+}

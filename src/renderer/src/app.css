@@ -535,8 +535,7 @@ code {
   gap: 12px;
 }
 
-.form-head-card .vendor-logo,
-.form-head-card .vendor-tile {
+.form-head-card .vendor-logo-box {
   width: 40px;
   height: 40px;
 }
@@ -584,27 +583,48 @@ code {
   display: contents;
 }
 
-.vendor-logo {
-  width: 44px;
-  height: 44px;
-  display: block;
-  /* 统一圆角（v0.8.15）：方形 PNG/截图类图标与整体设计语言对齐 */
-  border-radius: 9px;
-  object-fit: contain;
-}
-
-.vendor-tile {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  corner-shape: squircle;
-  color: #fff;
-  font-size: 19px;
-  font-weight: 700;
+/* 统一图标容器（v0.8.16）：所有来源的图标共用同一圆角几何——
+   透明 logo 垫底色居中（chip 底 + 细边），自带实心底的满铺，字母兜底同几何 */
+.vendor-logo-box {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  corner-shape: squircle;
+  overflow: hidden;
   flex-shrink: 0;
+  background: var(--chip);
+  border: 1px solid var(--border);
+}
+
+.vendor-logo-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 6px;
+}
+
+.vendor-logo-box.tile {
+  background: transparent;
+  border-color: transparent;
+}
+
+.vendor-logo-box.tile img {
+  padding: 0;
+}
+
+.vendor-logo-box.letter {
+  background: transparent;
+  border-color: transparent;
+}
+
+.vendor-logo-box.letter .vendor-letter {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  font-size: 18px;
 }
 
 .pcard-name {
@@ -711,14 +731,23 @@ code {
   flex-shrink: 0;
 }
 
-.as-list .vendor-logo,
-.as-list .vendor-tile {
+.as-list .vendor-logo-box {
   width: 30px;
   height: 30px;
+  border-radius: 8px;
 }
 
-.as-list .vendor-tile {
-  border-radius: 10px;
+.as-list .vendor-logo-box img {
+  padding: 4px;
+}
+
+.as-list .vendor-logo-box.tile img,
+.as-list .vendor-logo-box.letter img {
+  padding: 0;
+}
+
+.as-list .vendor-logo-box.letter .vendor-letter,
+.preset-card .vendor-logo-box.letter .vendor-letter {
   font-size: 13px;
 }
 
@@ -1192,17 +1221,18 @@ code {
   box-shadow: var(--shadow-1);
 }
 
-.preset-card .vendor-logo,
-.preset-card .vendor-tile {
+.preset-card .vendor-logo-box {
   width: 30px;
   height: 30px;
-  flex-shrink: 0;
   border-radius: 8px;
 }
 
-.preset-card .vendor-tile {
-  border-radius: 10px;
-  font-size: 13px;
+.preset-card .vendor-logo-box img {
+  padding: 4px;
+}
+
+.preset-card .vendor-logo-box.tile img {
+  padding: 0;
 }
 
 .preset-card-text {

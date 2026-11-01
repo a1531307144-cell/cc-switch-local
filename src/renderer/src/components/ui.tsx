@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import type { VendorInfo } from '../../../shared/vendors'
-import { presetIconUrl } from '../presetIcons'
+import { presetIconUrl, isTileIcon } from '../presetIcons'
 
 // 构建时内置的厂商图标（simple-icons，CC0）——运行时不向任何第三方请求图标
 const vendorIcons = import.meta.glob('../assets/vendors/*.svg', {
@@ -25,7 +25,11 @@ export function VendorChip({ vendor }: { vendor: VendorInfo }) {
   )
 }
 
-/** 卡片主视觉：优先预设图标（v0.8.14），其次域名识别的内置图标，最后彩色字母方块兜底 */
+/**
+ * 卡片主视觉：所有图标统一装进圆角容器（v0.8.16 视觉统一）——
+ * 透明 logo 垫底色居中，自带实心底的图满铺（上游 metadata shape='tile'），
+ * 无图标时彩色字母方块兜底。
+ */
 export function VendorLogo({
   vendor,
   fallbackText,
@@ -37,14 +41,23 @@ export function VendorLogo({
   iconSlug?: string
 }) {
   const presetUrl = presetIconUrl(iconSlug)
-  if (presetUrl) return <img className="vendor-logo" src={presetUrl} alt="" draggable={false} />
-  const url = vendor?.icon ? vendorIcons[`../assets/vendors/${vendor.icon}.svg`] : undefined
-  if (url) return <img className="vendor-logo" src={url} alt="" draggable={false} />
+  const vendorUrl = vendor?.icon ? vendorIcons[`../assets/vendors/${vendor.icon}.svg`] : undefined
+  const url = presetUrl ?? vendorUrl
   const letter = vendor?.letter ?? (fallbackText.trim().charAt(0).toUpperCase() || '?')
   const color = vendor?.color ?? 'var(--accent)'
+  if (!url) {
+    return (
+      <span className="vendor-logo-box letter" aria-hidden>
+        <span className="vendor-letter" style={{ background: color }}>
+          {letter}
+        </span>
+      </span>
+    )
+  }
+  const tile = presetUrl ? isTileIcon(iconSlug) : false
   return (
-    <span className="vendor-tile" style={{ background: color }} aria-hidden>
-      {letter}
+    <span className={`vendor-logo-box${tile ? ' tile' : ''}`}>
+      <img src={url} alt="" draggable={false} />
     </span>
   )
 }
