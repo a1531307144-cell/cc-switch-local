@@ -205,6 +205,8 @@ npx electron-builder --win --publish never
 
 > ⚠️ **版本号规则（2026-10-31 用户拍板）**：所有更新默认一律**小版本号**（`npm version patch`，如 0.8.2/0.8.3）——用户嫌大版本涨得太快；只有用户明确强调时才用 minor/major。
 
+> ⚠️ **试用确认规则（2026-11-01 用户拍板）**：每次更新在验证（自测+CDP）通过后、发布（commit/push/发版）之前，**必须先用沙箱数据目录启动一个可见的试用窗口给用户**（CCS_DATA_DIR/CCS_HOME_OVERRIDE 指向独立沙箱，勿用自测夹具），并明确告知用户在试用、数据是沙箱；**用户确认没问题后才发布**。用户特别说明「直接发」时跳过此步。
+
 > **提交/发布统一走门禁（2026-10-29 起强制）**：pre-commit 钩子（`scripts/githooks/`，经 `git config core.hooksPath` 激活）自动运行 `scripts/check-release.mjs`——暂存文件白名单 + 运行时隐私扫描（本机用户名/GitHub 账号运行时读取，仓库内零敏感词）。被拦截时读懂输出再处理；**不要用 --force 绕过**。教训来源：2026-10-28 `.zcode/plans` 会话文件曾被 `git add -A` 带进提交，靠白名单层才防住"陌生文件混入"这类 grep 扫不到的问题。
 
 0. **发布配置已就位**（2026-10-28 已完成）：`package.json` 已加 `repository` 字段，`electron-builder.yml` 已启用 `publish: {provider: github, releaseType: release}`。以后发布**跳过本步**，直接从第 1 步开始。
