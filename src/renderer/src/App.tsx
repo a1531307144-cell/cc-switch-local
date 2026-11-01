@@ -480,12 +480,10 @@ export default function App() {
         <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
           <div className="brand">
             <img className="logo-img" src={logoUrl} alt="" draggable={false} />
-            {!collapsed && (
-              <div>
-                <div className="brand-name">CC Switch Local</div>
-                <div className="brand-sub">{tr('app.subtitle')}</div>
-              </div>
-            )}
+            <div className="brand-text">
+              <div className="brand-name">CC Switch Local</div>
+              <div className="brand-sub">{tr('app.subtitle')}</div>
+            </div>
           </div>
           {TOOLS.map((tl) => (
             <button
@@ -493,10 +491,11 @@ export default function App() {
               type="button"
               className={`nav${view === tl.id ? ' active' : ''}`}
               onClick={() => setView(tl.id)}
-              title={collapsed ? tl.label : undefined}
+              data-tip={collapsed ? tl.label : undefined}
             >
-              {collapsed ? <span className="nav-chip">{tl.id === 'claude' ? 'CC' : 'CX'}</span> : <span>{tl.label}</span>}
-              {!collapsed && <span className="count">{store.providers.filter((p) => p.tool === tl.id).length}</span>}
+              <span className="nav-chip">{tl.id === 'claude' ? 'CC' : 'CX'}</span>
+              <span className="nav-label">{tl.label}</span>
+              <span className="count">{store.providers.filter((p) => p.tool === tl.id).length}</span>
             </button>
           ))}
           <div className="nav-divider" />
@@ -504,80 +503,79 @@ export default function App() {
             type="button"
             className={`nav icon${view === 'sessions' ? ' active' : ''}`}
             onClick={() => setView('sessions')}
-            title={collapsed ? tr('side.sessions') : undefined}
+            data-tip={collapsed ? tr('side.sessions') : undefined}
           >
             <IconBook />
-            {!collapsed && <span>{tr('side.sessions')}</span>}
+            <span className="nav-label">{tr('side.sessions')}</span>
           </button>
           <button
             type="button"
             className={`nav icon${view === 'mcp' ? ' active' : ''}`}
             onClick={() => setView('mcp')}
-            title={collapsed ? tr('side.mcp') : undefined}
+            data-tip={collapsed ? tr('side.mcp') : undefined}
           >
             <IconPlug />
-            {!collapsed && <span>{tr('side.mcp')}</span>}
+            <span className="nav-label">{tr('side.mcp')}</span>
           </button>
           <button
             type="button"
             className={`nav icon${view === 'skills' ? ' active' : ''}`}
             onClick={() => setView('skills')}
-            title={collapsed ? tr('side.skills') : undefined}
+            data-tip={collapsed ? tr('side.skills') : undefined}
           >
             <IconCube />
-            {!collapsed && <span>{tr('side.skills')}</span>}
+            <span className="nav-label">{tr('side.skills')}</span>
           </button>
           <button
             type="button"
             className={`nav icon${view === 'prompts' ? ' active' : ''}`}
             onClick={() => setView('prompts')}
-            title={collapsed ? tr('side.prompts') : undefined}
+            data-tip={collapsed ? tr('side.prompts') : undefined}
           >
             <IconNote />
-            {!collapsed && <span>{tr('side.prompts')}</span>}
+            <span className="nav-label">{tr('side.prompts')}</span>
           </button>
           <button
             type="button"
             className={`nav icon${view === 'groups' ? ' active' : ''}`}
             onClick={() => setView('groups')}
-            title={collapsed ? tr('side.groups') : undefined}
+            data-tip={collapsed ? tr('side.groups') : undefined}
           >
             <IconLayers />
-            {!collapsed && <span>{tr('side.groups')}</span>}
+            <span className="nav-label">{tr('side.groups')}</span>
           </button>
           <div className="nav-divider" />
           <button
             type="button"
             className={`nav icon${view === 'usage' ? ' active' : ''}`}
             onClick={() => setView('usage')}
-            title={collapsed ? tr('side.usage') : undefined}
+            data-tip={collapsed ? tr('side.usage') : undefined}
           >
             <IconChart />
-            {!collapsed && <span>{tr('side.usage')}</span>}
+            <span className="nav-label">{tr('side.usage')}</span>
           </button>
           <button
             type="button"
             className={`nav icon${view === 'settings' ? ' active' : ''}`}
             onClick={() => setView('settings')}
-            title={collapsed ? tr('side.settings') : undefined}
+            data-tip={collapsed ? tr('side.settings') : undefined}
           >
             <IconGear />
-            {!collapsed && <span>{tr('side.settings')}</span>}
+            <span className="nav-label">{tr('side.settings')}</span>
           </button>
           <div className="sidebar-foot">
-            {!collapsed && (
-              <>
-                <p className="muted small">{tr('side.privacy1')}</p>
-                <p className="muted small">{tr('side.privacy2')}</p>
-              </>
-            )}
+            <div className="foot-notes">
+              <p className="muted small">{tr('side.privacy1')}</p>
+              <p className="muted small">{tr('side.privacy2')}</p>
+            </div>
             <button
               type="button"
               className={`nav icon${collapsed ? ' icon-only' : ''}`}
               onClick={() => void toggleSidebar()}
-              title={collapsed ? tr('side.expand') : tr('side.collapse')}
+              data-tip={collapsed ? tr('side.expand') : tr('side.collapse')}
             >
-              {collapsed ? <IconChevronRight /> : <><IconChevronLeft /><span>{tr('side.collapse')}</span></>}
+              {collapsed ? <IconChevronRight /> : <IconChevronLeft />}
+              <span className="nav-label">{tr('side.collapse')}</span>
             </button>
           </div>
         </aside>
